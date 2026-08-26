@@ -430,9 +430,10 @@ const EMPRESAS = [
   mensual:{
     Abril:{residuos:[R("Escombro","170904",12,12,0,0,12,12)]},
     Mayo:{residuos:[R("Escombro","170904",1,1,0,0,1,1)]},
-    Junio:{residuos:[R("Escombro","170904",11,11,0,0,11,11)]}
+    Junio:{residuos:[R("Escombro","170904",11,11,0,0,11,11)]},
+    Julio:{residuos:[R("Excavación","",189,0,0,0,189,0)]}
   },
-  val:{ real:{Abril:0,Mayo:0,Junio:0}, acumulado:{Abril:0,Mayo:0,Junio:0}, meta:{Enero:5,Febrero:5,Marzo:5,Abril:5,Mayo:5,Junio:5,Julio:5} },
+  val:{ real:{Abril:0,Mayo:0,Junio:0,Julio:0}, acumulado:{Abril:0,Mayo:0,Junio:0,Julio:0}, meta:{Enero:5,Febrero:5,Marzo:5,Abril:5,Mayo:5,Junio:5,Julio:5} },
   fgr:{},
   cse:{
     correo:{Abril:"N/A",Mayo:"SI",Junio:"SI",Julio:"SI",Agosto:"SI"},
@@ -450,9 +451,10 @@ const EMPRESAS = [
 {
   id:"euro_proyecto_san_pablo_trott", sucursal:"Proyecto San Pablo Trotter", letra:"SP", m2total:null,
   mensual:{
+    Mayo:{residuos:[R("Excavación","110111",428,0,0,0,428,428)]},
     Junio:{residuos:[R("Escombro","170904",4,4,0,0,4,4)]}
   },
-  val:{ real:{Junio:0}, acumulado:{Junio:0}, meta:{Enero:5,Febrero:5,Marzo:5,Abril:5,Mayo:5,Junio:5,Julio:5} },
+  val:{ real:{Mayo:0,Junio:0}, acumulado:{Mayo:0,Junio:0}, meta:{Enero:5,Febrero:5,Marzo:5,Abril:5,Mayo:5,Junio:5,Julio:5} },
   fgr:{},
   cse:{
     correo:{Abril:"N/A",Mayo:"SI",Junio:"SI",Julio:"SI",Agosto:"SI"},
@@ -500,9 +502,10 @@ const EMPRESAS = [
 {
   id:"euro_proyecto_zaartu", sucursal:"Proyecto Zañartu", letra:"PZ", m2total:null,
   mensual:{
+    Junio:{residuos:[R("Excavación","110111",4,0,0,0,4,4)]},
     Julio:{residuos:[R("Escombro","170904",6,0,0,0,6,6)]}
   },
-  val:{ real:{Julio:0}, acumulado:{Julio:0}, meta:{Enero:5,Febrero:5,Marzo:5,Abril:5,Mayo:5,Junio:5,Julio:5} },
+  val:{ real:{Junio:0,Julio:0}, acumulado:{Junio:0,Julio:0}, meta:{Enero:5,Febrero:5,Marzo:5,Abril:5,Mayo:5,Junio:5,Julio:5} },
   fgr:{},
   cse:{
     correo:{Abril:"N/A",Mayo:"SI",Junio:"SI",Julio:"SI",Agosto:"SI"},
@@ -521,9 +524,11 @@ const EMPRESAS = [
   id:"euro_proyecto_alto_irarrzaval", sucursal:"Proyecto Alto Irarrázaval", letra:"AI", m2total:null,
   mensual:{
     Abril:{residuos:[R("Escombro","170904",11,11,0,0,11,11)]},
-    Mayo:{residuos:[R("Escombro","170904",12,12,0,0,12,12)]}
+    Mayo:{residuos:[R("Escombro","170904",12,12,0,0,12,12)]},
+    Junio:{residuos:[R("Excavación","",6,0,0,0,0,0)]},
+    Julio:{residuos:[R("Excavación","",6,0,0,0,0,0)]}
   },
-  val:{ real:{Abril:0,Mayo:0}, acumulado:{Abril:0,Mayo:0}, meta:{Enero:5,Febrero:5,Marzo:5,Abril:5,Mayo:5,Junio:5,Julio:5} },
+  val:{ real:{Abril:0,Mayo:0,Junio:0,Julio:0}, acumulado:{Abril:0,Mayo:0,Junio:0,Julio:0}, meta:{Enero:5,Febrero:5,Marzo:5,Abril:5,Mayo:5,Junio:5,Julio:5} },
   fgr:{},
   cse:{
     correo:{Abril:"N/A",Mayo:"SI",Junio:"SI",Julio:"SI",Agosto:"SI"},
@@ -562,7 +567,13 @@ function esExcavacionRes(r){
   return n === "excavación" || n === "excavacion";
 }
 function docValor(r, doc){
-  if ((doc === "Transportista" || doc === "Disposición final") && esExcavacionRes(r)) return null;
+  if ((doc === "Transportista" || doc === "Disposición final") && esExcavacionRes(r)) {
+    // Solo se exime cuando el dato realmente falta (0/null/undefined) — si
+    // Excavación ya trae transportista/disposición final documentados, se
+    // muestran normalmente (✓ Completo o parcial), no se ocultan.
+    const v = r.docs[doc];
+    return (v === 0 || v === null || v === undefined) ? null : v;
+  }
   return r.docs[doc];
 }
 
@@ -1202,10 +1213,10 @@ function fgrCalcMes(emp, mes){
   const base = emp.fgr[mes]; // valores horneados, fallback si no hay datos en vivo aún
 
   if (!fgrLive || !m2 || !avance){
-    return base ? { fgr: base.fgr, cumpl: base.cumpl, co2: base.co2, avance: avance, live: false } : { fgr: null, cumpl: null, co2: null, avance: avance, live: false };
+    return base ? { fgr: base.fgr, cumpl: base.cumpl, co2: base.co2, avance: avance, live: false, m2Avanzados: null, m3Acum: null, co2Acum: null } : { fgr: null, cumpl: null, co2: null, avance: avance, live: false, m2Avanzados: null, m3Acum: null, co2Acum: null };
   }
   const m2Avanzados = m2 * (avance / 100);
-  if (!m2Avanzados) return { fgr: null, cumpl: null, co2: null, avance: avance, live: true };
+  if (!m2Avanzados) return { fgr: null, cumpl: null, co2: null, avance: avance, live: true, m2Avanzados: m2Avanzados, m3Acum: null, co2Acum: null };
 
   // FGR y CO2ev/m² se calculan de forma ACUMULADA (Enero..mes): m³ de
   // residuo / Ton CO2 evitadas generados hasta la fecha, sobre los m²
@@ -1230,14 +1241,19 @@ function fgrCalcMes(emp, mes){
 
   if (faltaAlgunMes){
     return base
-      ? { fgr: base.fgr, cumpl: base.cumpl, co2: base.co2, avance: avance, live: true, incompleto: true }
-      : { fgr: null, cumpl: null, co2: null, avance: avance, live: true, incompleto: true };
+      ? { fgr: base.fgr, cumpl: base.cumpl, co2: base.co2, avance: avance, live: true, incompleto: true, m2Avanzados: m2Avanzados, m3Acum: null, co2Acum: null }
+      : { fgr: null, cumpl: null, co2: null, avance: avance, live: true, incompleto: true, m2Avanzados: m2Avanzados, m3Acum: null, co2Acum: null };
   }
 
   const fgr = m3Acum / m2Avanzados;
   const cumpl = Math.min(100, Math.round((META_FGR / fgr) * 1000) / 10);
   const co2 = Math.round((co2Acum / m2Avanzados) * 10000000) / 10000000;
-  return { fgr: Math.round(fgr*1000)/1000, cumpl: cumpl, co2: co2, avance: avance, live: true };
+  return {
+    fgr: Math.round(fgr*1000)/1000, cumpl: cumpl, co2: co2, avance: avance, live: true,
+    m2Avanzados: Math.round(m2Avanzados*100)/100,
+    m3Acum: Math.round(m3Acum*100)/100,
+    co2Acum: Math.round(co2Acum*10000)/10000
+  };
 }
 
 function fgrOnAvanceChange(empId, mes, val){
@@ -1382,8 +1398,8 @@ function renderFGR(emp){
   if(meses.length===0){
     html += '<div class="empty">Sin datos de FGR / CO2 registrados para '+emp.sucursal+'.</div>';
   } else {
-    html += '<div style="overflow-x:auto;"><table style="min-width:780px;">'
-      +'<thead><tr><th class="tl">Mes</th><th>% Avance</th><th>m² construidos</th><th>FGR (m³/m²)</th><th>Cumplimiento (meta ≤ '+META_FGR+')</th><th>Ton CO2 evitadas/m² (acumulado)</th></tr></thead><tbody>'
+    html += '<div style="overflow-x:auto;"><table style="min-width:960px;">'
+      +'<thead><tr><th class="tl">Mes</th><th>% Avance</th><th>m² construidos (m²total × %Avance)</th><th>m³ residuo acumulado</th><th>Ton CO2 evitadas acumuladas</th><th>FGR (m³/m²)</th><th>Cumplimiento (meta ≤ '+META_FGR+')</th><th>Ton CO2 evitadas/m² (acumulado)</th></tr></thead><tbody>'
       +meses.map(function(m){
         const d = fgrCalcMes(emp, m);
         const sinDato = d.fgr===null || d.fgr===undefined;
@@ -1392,13 +1408,18 @@ function renderFGR(emp){
         const marca = d.incompleto
           ? ' <span title="Falta historial de algún mes anterior en Total Residuos (probablemente se subió un Excel de un solo mes) — este acumulado puede estar desactualizado, vuelve a subir el histórico completo." style="font-size:9px;color:var(--warn);cursor:help;">⚠</span>'
           : (d.live ? ' <span title="Calculado en vivo (acumulado Enero→'+m+')" style="font-size:9px;color:var(--brand);">●</span>' : '');
+        const m2Av = (d.m2Avanzados===null||d.m2Avanzados===undefined) ? '<span style="color:var(--g300);">—</span>' : d.m2Avanzados.toLocaleString("es-CL");
+        const m3Ac = (d.m3Acum===null||d.m3Acum===undefined) ? '<span style="color:var(--g300);">—</span>' : d.m3Acum.toLocaleString("es-CL");
+        const co2Ac = (d.co2Acum===null||d.co2Acum===undefined) ? '<span style="color:var(--g300);">—</span>' : d.co2Acum.toLocaleString("es-CL",{maximumFractionDigits:7});
         return '<tr>'
           +'<td class="tl" style="font-weight:600;">'+m+marca+'</td>'
           +'<td><span style="display:inline-flex;align-items:center;gap:3px;"><input type="number" min="0" max="100" step="0.1" class="mn-item-input" style="width:64px;border:1.5px solid var(--bd);border-radius:6px;padding:3px 6px;" value="'+(d.avance===undefined||d.avance===null?"":d.avance)+'" placeholder="—" onchange="fgrOnAvanceChange(\''+emp.id+'\',\''+m+'\',this.value)"><span style="font-size:11px;color:var(--g500);">%</span></span></td>'
-          +'<td>'+(m2?m2.toLocaleString("es-CL"):'<span style="color:var(--g300);">—</span>')+'</td>'
+          +'<td>'+m2Av+'</td>'
+          +'<td>'+m3Ac+'</td>'
+          +'<td>'+co2Ac+'</td>'
           +'<td style="font-weight:700;color:'+col+'">'+(sinDato?'—':d.fgr)+'</td>'
           +'<td>'+(sinDato?'<span style="color:var(--g300);">—</span>':'<div class="bw"><div class="bb"><div class="bf" style="width:'+Math.min(d.cumpl,100)+'%;background:'+col+';"></div></div><span class="bv" style="color:'+col+'">'+d.cumpl+'%</span></div>')+'</td>'
-          +'<td>'+(sinDato?'—':d.co2)+'</td>'
+          +'<td>'+(sinDato?'—':d.co2.toLocaleString("es-CL",{maximumFractionDigits:7}))+'</td>'
           +'</tr>';
       }).join("")
       +'</tbody></table></div>';
