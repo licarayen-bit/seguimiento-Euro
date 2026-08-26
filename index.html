@@ -191,6 +191,11 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
 .export-opt-name{font-size:13px;font-weight:600;color:var(--g800);}
 .export-opt-desc{font-size:11px;color:var(--tx2);margin-top:1px;}
 .export-cancel{width:100%;padding:8px;border:1.5px solid var(--bd);border-radius:8px;background:transparent;font-family:inherit;font-size:12px;font-weight:600;color:var(--g500);cursor:pointer;margin-top:4px;}
+.m2-modal{background:#fff;border-radius:14px;padding:24px;width:460px;max-width:90vw;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18);}
+.m2-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--g100);}
+.m2-row:last-child{border-bottom:none;}
+.m2-row input[type=number]{width:120px;padding:6px 8px;border:1.5px solid var(--bd);border-radius:6px;font-family:inherit;font-size:12px;color:var(--tx);background:#fff;outline:none;text-align:right;}
+.m2-row input[type=number]:focus{border-color:var(--brand);}
 .export-cancel:hover{background:var(--g50);}
 .print-header{display:none;align-items:center;justify-content:space-between;padding:0 0 14px;border-bottom:2px solid var(--p600);margin-bottom:14px;}
 .print-header-info{text-align:right;font-size:10px;color:#667085;}
@@ -226,6 +231,9 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
     <button class="mn-topbtn" id="mnAccessBtn" type="button" onclick="mnToggleVista()" style="height:34px;">
       📝 <span id="mnAccessBtnLabel">Minutas</span>
     </button>
+    <button class="mn-topbtn" type="button" onclick="m2ToggleOverlay()" style="height:34px;">
+      📐 M² Obras
+    </button>
     <button class="btn-export" onclick="abrirExport()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Exportar informe
@@ -256,6 +264,15 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
       </div>
     </div>
     <button class="export-cancel" onclick="cerrarExport()">Cancelar</button>
+  </div>
+</div>
+
+<div class="export-overlay" id="m2Overlay" onclick="if(event.target===this)m2ToggleOverlay()">
+  <div class="m2-modal">
+    <div class="export-modal-title">M² totales por obra</div>
+    <div class="export-modal-sub">Se usan para calcular FGR y CO2ev/m² en la pestaña FGR de cada obra. Se guardan solas ~1.5s después de editar.</div>
+    <div id="m2OverlayBody"></div>
+    <button class="export-cancel" onclick="m2ToggleOverlay()">Cerrar</button>
   </div>
 </div>
 
@@ -534,6 +551,21 @@ function getEmp(id){ return EMPRESAS.find(e=>e.id===id); }
 function docFrac(v, impTotal){ if(v===null||v===undefined) return null; return [v, impTotal]; }
 function resDelMes(emp, mes){ return (emp.mensual[mes]||{residuos:[]}).residuos; }
 
+// Excavación cuenta como aporte a la trazabilidad (r.imp ya se suma
+// igual que cualquier otro residuo), pero no se le exige Transportista ni
+// Disposición final: esas dos columnas muestran "No aplica" en vez de
+// "Falta" para este residuo, sin importar el dato crudo que traiga el
+// Sheet — mismo criterio ya aplicado en calcObjetivos (valorizacion-
+// recylink.html) para orgánicos/CDL.
+function esExcavacionRes(r){
+  const n = (r.nombre||"").trim().toLowerCase();
+  return n === "excavación" || n === "excavacion";
+}
+function docValor(r, doc){
+  if ((doc === "Transportista" || doc === "Disposición final") && esExcavacionRes(r)) return null;
+  return r.docs[doc];
+}
+
 function pctTrazMes(emp, mes){
   if(esFuturo(mes)) return null;
   const res = resDelMes(emp, mes);
@@ -541,8 +573,8 @@ function pctTrazMes(emp, mes){
   let ok=0, tot=0;
   res.forEach(r=>{
     ok+=r.imp; tot+=r.imp;
-    const tr = docFrac(r.docs["Transportista"], r.imp); if(tr){tot+=tr[1];ok+=tr[0];}
-    const df = docFrac(r.docs["Disposición final"], r.imp); if(df){tot+=df[1];ok+=df[0];}
+    const tr = docFrac(docValor(r,"Transportista"), r.imp); if(tr){tot+=tr[1];ok+=tr[0];}
+    const df = docFrac(docValor(r,"Disposición final"), r.imp); if(df){tot+=df[1];ok+=df[0];}
   });
   return tot===0?null:Math.round(ok/tot*100);
 }
@@ -552,8 +584,8 @@ function pctTrazHasta(emp, hastaMes){
   MESES.slice(0,idx+1).filter(m=>!esFuturo(m)).forEach(m=>{
     resDelMes(emp,m).forEach(r=>{
       ok+=r.imp; tot+=r.imp;
-      const tr = docFrac(r.docs["Transportista"], r.imp); if(tr){tot+=tr[1];ok+=tr[0];}
-      const df = docFrac(r.docs["Disposición final"], r.imp); if(df){tot+=df[1];ok+=df[0];}
+      const tr = docFrac(docValor(r,"Transportista"), r.imp); if(tr){tot+=tr[1];ok+=tr[0];}
+      const df = docFrac(docValor(r,"Disposición final"), r.imp); if(df){tot+=df[1];ok+=df[0];}
     });
   });
   return tot===0?null:Math.round(ok/tot*100);
@@ -801,7 +833,7 @@ function pCell(p){
 }
 function pTrazoRes(r){
   let ok=r.imp, tot=r.imp;
-  DOCS_TRAZO_COLS.forEach(function(d){ const f=docFrac(r.docs[d],r.imp); if(!f)return; tot+=f[1]; ok+=f[0]; });
+  DOCS_TRAZO_COLS.forEach(function(d){ const f=docFrac(docValor(r,d),r.imp); if(!f)return; tot+=f[1]; ok+=f[0]; });
   return tot===0?null:Math.round(ok/tot*100);
 }
 function pDocRes(r){
@@ -859,7 +891,7 @@ function renderMensual(emp){
     return '<tr>'
       +'<td class="col-residuo"><span class="badge b-na" style="background:var(--g100);color:var(--g700);">'+r.nombre+'</span></td>'
       +'<td class="col-imp" style="text-align:center;"><span style="font-size:17px;font-weight:700;color:var(--g800);">'+r.imp+'</span></td>'
-      +DOCS_TRAZO_COLS.map(function(doc){ return '<td class="col-doc">'+bdg(r.docs[doc], r.imp)+'</td>'; }).join("")
+      +DOCS_TRAZO_COLS.map(function(doc){ return '<td class="col-doc">'+bdg(docValor(r,doc), r.imp)+'</td>'; }).join("")
       +pCell(pTrazoRes(r))
       +'</tr>';
   }).join("");
@@ -916,7 +948,7 @@ function docsAnuoMes(emp, docKey, m){
   const res = resDelMes(emp, m);
   if(!res.length) return '<td style="text-align:center"><span class="cell-no">✗</span></td>';
   let ok=0, tot=0;
-  res.forEach(function(r){ const f=docFrac(r.docs[docKey], r.imp); if(!f) return; tot+=f[1]; ok+=f[0]; });
+  res.forEach(function(r){ const f=docFrac(docValor(r,docKey), r.imp); if(!f) return; tot+=f[1]; ok+=f[0]; });
   if(tot===0) return '<td style="color:var(--g300);font-size:11px">—</td>';
   return ok>=tot ? '<td style="text-align:center"><span class="cell-ok">✓</span></td>' : '<td style="text-align:center"><span class="cell-no">✗</span></td>';
 }
@@ -1130,10 +1162,32 @@ async function fgrFetchLive(){
       avancePorObraMes[suc] = avancePorObraMes[suc] || {};
       MESES_ACTIVOS.forEach(function(mes){
         const v = fgrMesKeyLookup(fila, mes);
-        if (v !== undefined && v !== "") avancePorObraMes[suc][mes] = parseFloat(v);
+        if (v === undefined || v === "") return;
+        let pct = parseFloat(v);
+        if (isNaN(pct)) return;
+        // El % Avance ingresado a mano en el Sheet suele quedar como celda
+        // con formato "%" de Sheets, que internamente guarda una fracción
+        // (0.2323 para "23,23%"), no el número 23.23. Cualquier avance real
+        // es ≤100% ⇒ su fracción es siempre ≤1, así que esto normaliza sin
+        // ambigüedad a escala 0-100.
+        if (pct <= 1) pct = Math.round(pct * 10000) / 100;
+        avancePorObraMes[suc][mes] = pct;
       });
     });
     fgrLive = { m3PorObraMes: m3PorObraMes, co2PorObraMes: co2PorObraMes, avancePorObraMes: avancePorObraMes };
+
+    // m² totales por obra: viven en la fila "m2 totales" de "% de avance"
+    // (readAvanceSheet_ ya las expone en m2Totales). Se usan para
+    // sobreescribir el m2total horneado de EMPRESAS con el valor real del
+    // Sheet — así el panel "M² Obras" parte con lo que ya haya cargado.
+    const m2Totales = (payload.avance && payload.avance.m2Totales) || {};
+    EMPRESAS.forEach(function(emp){
+      const v = m2Totales[emp.sucursal];
+      if (v === undefined || v === null || v === "") return;
+      const num = parseFloat(v);
+      if (!isNaN(num)) emp.m2total = num;
+    });
+    if (m2Open) m2RenderOverlay();
   } catch(err){
     console.warn("No se pudo cargar % Avance / Total Residuos en vivo para FGR:", err);
   } finally {
@@ -1213,7 +1267,15 @@ async function fgrSaveAvanceDirty(){
   fgrAvanceDirty = {};
   const filas = Object.keys(porSucursal).map(function(suc){
     const emp = EMPRESAS.find(function(e){ return e.sucursal === suc; });
-    return { empresa_id: emp ? emp.id : "", Sucursal: suc, Tipo: "% Avance", "Año": "2026", valores: porSucursal[suc] };
+    // Guardar como fracción (0-1), igual convención que el % Avance ya
+    // cargado a mano en el Sheet (celda con formato "%" de Sheets) — si se
+    // manda 45 en vez de 0.45, la celda mostraría "4500%".
+    const valoresFraccion = {};
+    Object.keys(porSucursal[suc]).forEach(function(mes){
+      const pct = porSucursal[suc][mes];
+      valoresFraccion[mes] = (pct === null || pct === undefined) ? "" : pct / 100;
+    });
+    return { empresa_id: emp ? emp.id : "", Sucursal: suc, Tipo: "% Avance", "Año": "2026", valores: valoresFraccion };
   });
   try {
     const controller = new AbortController();
@@ -1239,12 +1301,84 @@ async function fgrSaveAvanceDirty(){
   }
 }
 
+// ---------- M² totales por obra (panel global) ----------
+// Viven en la fila "m2 totales" de "% de avance" (misma pestaña que %
+// Avance), una columna por obra alineada con la fila 1 (Sucursal). Solo
+// se pueden actualizar obras que YA tengan columna ahí — si una obra
+// nueva no tiene columna todavía, writeM2Totales_ avisa cuáles no pudo
+// guardar en vez de fallar en silencio.
+let m2Open = false;
+let m2Dirty = {}; // { sucursal: m2 }
+let m2SaveTimer = null;
+const M2_AUTOSAVE_MS = 1500;
+
+function m2ToggleOverlay(){
+  m2Open = !m2Open;
+  const el = mnEl("m2Overlay");
+  if (el) el.className = "export-overlay" + (m2Open ? " open" : "");
+  if (m2Open) m2RenderOverlay();
+}
+function m2RenderOverlay(){
+  const body = mnEl("m2OverlayBody");
+  if (!body) return;
+  body.innerHTML = EMPRESAS.map(function(emp){
+    return '<div class="m2-row">'
+      +'<div style="flex:1;font-size:12.5px;font-weight:600;color:var(--g700);">'+mnEscapeHtml(emp.sucursal)+'</div>'
+      +'<input type="number" min="0" step="0.01" value="'+(emp.m2total===null||emp.m2total===undefined?"":emp.m2total)+'" placeholder="—" onchange="m2OnChange(\''+emp.id+'\',this.value)">'
+      +'<span style="font-size:11px;color:var(--g400);width:16px;">m²</span>'
+      +'</div>';
+  }).join("");
+}
+function m2OnChange(empId, val){
+  const emp = EMPRESAS.find(function(e){ return e.id===empId; });
+  if (!emp) return;
+  const v = val === "" ? null : parseFloat(val);
+  emp.m2total = (v===null || isNaN(v)) ? null : Math.max(0, v);
+  m2Dirty[emp.sucursal] = emp.m2total;
+  clearTimeout(m2SaveTimer);
+  m2SaveTimer = setTimeout(m2SaveDirty, M2_AUTOSAVE_MS);
+  if (vistaActual === "fgr") renderMain();
+}
+async function m2SaveDirty(){
+  const sucursales = Object.keys(m2Dirty);
+  if (!sucursales.length) return;
+  const valores = {};
+  sucursales.forEach(function(suc){ valores[suc] = (m2Dirty[suc]===null||m2Dirty[suc]===undefined) ? "" : m2Dirty[suc]; });
+  m2Dirty = {};
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function(){ controller.abort(); }, 8000);
+    const res = await fetch(DATA_SOURCE_URL, {
+      method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: JSON.stringify({ tipo:"m2totales", valores: valores }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const json = await res.json();
+    if (json.error || json.ok === false) throw new Error(json.error || "Error desconocido");
+    if (json.noEncontradas && json.noEncontradas.length){
+      mnShowToast("Guardado, pero falta agregar columna en \"% de avance\" para: " + json.noEncontradas.join(", "), true);
+    } else {
+      mnShowToast("m² totales guardados.");
+    }
+  } catch(err){
+    console.error(err);
+    Object.keys(valores).forEach(function(suc){ m2Dirty[suc] = valores[suc]; });
+    mnShowToast("No se pudo guardar los m² totales, reintentando…", true);
+    clearTimeout(m2SaveTimer);
+    m2SaveTimer = setTimeout(m2SaveDirty, M2_AUTOSAVE_MS * 4);
+  }
+}
+
 function renderFGR(emp){
   const m2 = emp.m2total;
   const meses = MESES_ACTIVOS.filter(function(m){ return emp.fgr[m] || (fgrLive && fgrMesKeyLookup((fgrLive.avancePorObraMes[emp.sucursal]||{}), m) !== undefined); });
   let html = '<div class="card">'
     +'<div class="card-header"><div class="card-title">FGR · Ton CO2 evitadas/m²</div>'
-    +'<div class="card-sub">Meta FGR ≤ '+META_FGR+' m³/m² · '+(m2?("m² totales de la obra: "+m2.toLocaleString("es-CL")):"m² totales no informados")+'</div></div>';
+    +'<div class="card-sub" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+    +'<span>Meta FGR ≤ '+META_FGR+' m³/m² · m² totales de la obra:</span>'
+    +'<input type="number" min="0" step="0.01" style="width:100px;padding:3px 7px;border:1.5px solid var(--bd);border-radius:6px;font-family:inherit;font-size:11.5px;color:var(--tx);background:#fff;text-align:right;" value="'+(m2===null||m2===undefined?"":m2)+'" placeholder="—" onchange="m2OnChange(\''+emp.id+'\',this.value)">'
+    +'<span>m²</span>'
+    +'</div></div>';
   if(meses.length===0){
     html += '<div class="empty">Sin datos de FGR / CO2 registrados para '+emp.sucursal+'.</div>';
   } else {
@@ -1260,7 +1394,7 @@ function renderFGR(emp){
           : (d.live ? ' <span title="Calculado en vivo (acumulado Enero→'+m+')" style="font-size:9px;color:var(--brand);">●</span>' : '');
         return '<tr>'
           +'<td class="tl" style="font-weight:600;">'+m+marca+'</td>'
-          +'<td><input type="number" min="0" max="100" step="0.1" class="mn-item-input" style="width:70px;border:1.5px solid var(--bd);border-radius:6px;padding:3px 6px;" value="'+(d.avance===undefined||d.avance===null?"":d.avance)+'" placeholder="—" onchange="fgrOnAvanceChange(\''+emp.id+'\',\''+m+'\',this.value)"></td>'
+          +'<td><span style="display:inline-flex;align-items:center;gap:3px;"><input type="number" min="0" max="100" step="0.1" class="mn-item-input" style="width:64px;border:1.5px solid var(--bd);border-radius:6px;padding:3px 6px;" value="'+(d.avance===undefined||d.avance===null?"":d.avance)+'" placeholder="—" onchange="fgrOnAvanceChange(\''+emp.id+'\',\''+m+'\',this.value)"><span style="font-size:11px;color:var(--g500);">%</span></span></td>'
           +'<td>'+(m2?m2.toLocaleString("es-CL"):'<span style="color:var(--g300);">—</span>')+'</td>'
           +'<td style="font-weight:700;color:'+col+'">'+(sinDato?'—':d.fgr)+'</td>'
           +'<td>'+(sinDato?'<span style="color:var(--g300);">—</span>':'<div class="bw"><div class="bb"><div class="bf" style="width:'+Math.min(d.cumpl,100)+'%;background:'+col+';"></div></div><span class="bv" style="color:'+col+'">'+d.cumpl+'%</span></div>')+'</td>'
