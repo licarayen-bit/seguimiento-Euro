@@ -196,6 +196,13 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
 .m2-row:last-child{border-bottom:none;}
 .m2-row input[type=number]{width:120px;padding:6px 8px;border:1.5px solid var(--bd);border-radius:6px;font-family:inherit;font-size:12px;color:var(--tx);background:#fff;outline:none;text-align:right;}
 .m2-row input[type=number]:focus{border-color:var(--brand);}
+.kpi-modal{background:#fff;border-radius:14px;padding:24px;width:1100px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18);}
+.kpi-cmp-table{border-collapse:collapse;width:100%;min-width:920px;}
+.kpi-cmp-table th{padding:8px 10px;font-size:9.5px;font-weight:700;color:var(--tx2);text-align:center;border-bottom:1px solid var(--bd);background:var(--g50);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;}
+.kpi-cmp-table th:first-child{text-align:left;}
+.kpi-cmp-table td{padding:8px 10px;font-size:11.5px;text-align:center;border-bottom:1px solid var(--g100);white-space:nowrap;}
+.kpi-cmp-table td:first-child{text-align:left;font-weight:600;color:var(--g700);}
+.kpi-cmp-table tr:last-child td{border-bottom:none;}
 .export-cancel:hover{background:var(--g50);}
 .print-header{display:none;align-items:center;justify-content:space-between;padding:0 0 14px;border-bottom:2px solid var(--p600);margin-bottom:14px;}
 .print-header-info{text-align:right;font-size:10px;color:#667085;}
@@ -233,6 +240,9 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
     </button>
     <button class="mn-topbtn" type="button" onclick="m2ToggleOverlay()" style="height:34px;">
       📐 M² Obras
+    </button>
+    <button class="mn-topbtn" type="button" onclick="kpiToggleOverlay()" style="height:34px;">
+      📊 Comparar KPIs
     </button>
     <button class="btn-export" onclick="abrirExport()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -273,6 +283,15 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
     <div class="export-modal-sub">Se usan para calcular FGR y CO2ev/m² en la pestaña FGR de cada obra. Se guardan solas ~1.5s después de editar.</div>
     <div id="m2OverlayBody"></div>
     <button class="export-cancel" onclick="m2ToggleOverlay()">Cerrar</button>
+  </div>
+</div>
+
+<div class="export-overlay" id="kpiOverlay" onclick="if(event.target===this)kpiToggleOverlay()">
+  <div class="kpi-modal">
+    <div class="export-modal-title">Comparativo de KPIs por obra</div>
+    <div class="export-modal-sub" id="kpiOverlaySub"></div>
+    <div style="overflow-x:auto;"><div id="kpiOverlayBody"></div></div>
+    <button class="export-cancel" onclick="kpiToggleOverlay()">Cerrar</button>
   </div>
 </div>
 
@@ -700,6 +719,19 @@ function objetivosDe(emp, hastaMes){
     ok: (emp.val.acumulado[hastaMes] ?? -1) >= 5,
     detalle: "% acumulado de valorización en volumen a "+hastaMes
   }];
+  // FGR ≤ META_FGR: se calcula en vivo con fgrCalcMes (acumulado desde el
+  // inicio real del proyecto, incluyendo años anteriores). "avance" se
+  // normaliza igual que el objetivo horneado "Ton CO2 evitadas/M2"
+  // (0-100, 100 = cumple la meta) — el FGR real en m³/m² va en el detalle,
+  // porque "menor es mejor" no calza con el avance/meta>=100% del resto.
+  const fgrData = fgrCalcMes(emp, hastaMes);
+  const fgrSinDato = fgrData.fgr===null || fgrData.fgr===undefined;
+  list.push({
+    texto: "FGR igual o menor a "+META_FGR+" m³/m²", meta:100, avance: fgrSinDato ? null : fgrData.cumpl,
+    ok: fgrSinDato ? null : fgrData.fgr<=META_FGR,
+    detalle: fgrSinDato ? "Sin dato de FGR registrado — edita el % Avance en la pestaña FGR" : "FGR acumulado a "+hastaMes+": "+fgrData.fgr+" m³/m²",
+    sinDato: fgrSinDato
+  });
   emp.objetivosStatic.forEach(o=>{
     const sinDato = o.avance===null || o.avance===undefined;
     list.push({
@@ -1134,8 +1166,9 @@ function renderValorizacion(emp){
 // Script una sola vez al cargar el visor; el %Avance también se lee de la
 // pestaña "% de avance" (fila Tipo="% Avance") para partir con el valor
 // real ya cargado, si existe.
-let fgrLive = null; // { m3PorObraMes:{suc:{mes:m3}}, co2PorObraMes:{suc:{mes:co2}}, avancePorObraMes:{suc:{mes:pct}} }
+let fgrLive = null; // { m3PorObraMes:{suc:{mes:m3}}, co2PorObraMes:{suc:{mes:co2}}, avancePorObraMes:{suc:{mes:pct}}, m3AnioAnteriorPorObra:{suc:m3}, co2AnioAnteriorPorObra:{suc:co2} }
 let fgrLiveLoading = false;
+const FGR_ANIO_ACTUAL = "2026"; // año que cubre MESES_ACTIVOS
 const FGR_AVANCE_AUTOSAVE_MS = 1500;
 let fgrAvanceDirty = {}; // { "sucursal|mes": pct }
 let fgrAvanceSaveTimer = null;
@@ -1155,14 +1188,24 @@ async function fgrFetchLive(){
     const res = await fetch(DATA_SOURCE_URL + "?_=" + Date.now());
     const payload = await res.json();
     const m3PorObraMes = {}, co2PorObraMes = {}, avancePorObraMes = {};
+    // Años anteriores a FGR_ANIO_ACTUAL se acumulan aparte, por obra, sin
+    // desglose por mes: FGR/CO2ev·m² son un acumulado desde el inicio real
+    // del proyecto (pudo empezar en 2025 o antes), no solo año calendario.
+    const m3AnioAnteriorPorObra = {}, co2AnioAnteriorPorObra = {};
     (payload.totalResiduos || []).forEach(function(r){
       const suc = String(r.Sucursal || "").trim();
       const mes = String(r.Mes || "").trim();
       if (!suc || !mes) return;
-      m3PorObraMes[suc] = m3PorObraMes[suc] || {};
-      co2PorObraMes[suc] = co2PorObraMes[suc] || {};
+      const anio = String(r["Año"] || "").trim();
       const m3 = parseFloat(r["Total M3"]) || 0;
       const co2 = parseFloat(r["Tons. CO2eq. evitadas"]) || 0;
+      if (anio && anio !== FGR_ANIO_ACTUAL){
+        m3AnioAnteriorPorObra[suc] = (m3AnioAnteriorPorObra[suc] || 0) + m3;
+        co2AnioAnteriorPorObra[suc] = (co2AnioAnteriorPorObra[suc] || 0) + co2;
+        return;
+      }
+      m3PorObraMes[suc] = m3PorObraMes[suc] || {};
+      co2PorObraMes[suc] = co2PorObraMes[suc] || {};
       m3PorObraMes[suc][mes] = (m3PorObraMes[suc][mes] || 0) + m3;
       co2PorObraMes[suc][mes] = (co2PorObraMes[suc][mes] || 0) + co2;
     });
@@ -1185,7 +1228,10 @@ async function fgrFetchLive(){
         avancePorObraMes[suc][mes] = pct;
       });
     });
-    fgrLive = { m3PorObraMes: m3PorObraMes, co2PorObraMes: co2PorObraMes, avancePorObraMes: avancePorObraMes };
+    fgrLive = {
+      m3PorObraMes: m3PorObraMes, co2PorObraMes: co2PorObraMes, avancePorObraMes: avancePorObraMes,
+      m3AnioAnteriorPorObra: m3AnioAnteriorPorObra, co2AnioAnteriorPorObra: co2AnioAnteriorPorObra
+    };
 
     // m² totales por obra: viven en la fila "m2 totales" de "% de avance"
     // (readAvanceSheet_ ya las expone en m2Totales). Se usan para
@@ -1199,11 +1245,12 @@ async function fgrFetchLive(){
       if (!isNaN(num)) emp.m2total = num;
     });
     if (m2Open) m2RenderOverlay();
+    if (kpiOpen) kpiRenderOverlay();
   } catch(err){
     console.warn("No se pudo cargar % Avance / Total Residuos en vivo para FGR:", err);
   } finally {
     fgrLiveLoading = false;
-    if (vistaActual === "fgr") renderMain();
+    if (vistaActual === "fgr" || vistaActual === "obj") renderMain();
   }
 }
 
@@ -1218,9 +1265,12 @@ function fgrCalcMes(emp, mes){
   const m2Avanzados = m2 * (avance / 100);
   if (!m2Avanzados) return { fgr: null, cumpl: null, co2: null, avance: avance, live: true, m2Avanzados: m2Avanzados, m3Acum: null, co2Acum: null };
 
-  // FGR y CO2ev/m² se calculan de forma ACUMULADA (Enero..mes): m³ de
-  // residuo / Ton CO2 evitadas generados hasta la fecha, sobre los m²
-  // ya avanzados a la fecha — no solo el dato puntual del mes en curso.
+  // FGR y CO2ev/m² se calculan de forma ACUMULADA desde el inicio real del
+  // proyecto (Enero de FGR_ANIO_ACTUAL..mes, MÁS todo lo generado en años
+  // anteriores — el proyecto pudo empezar en 2025 o antes): m³ de residuo
+  // / Ton CO2 evitadas generados hasta la fecha, sobre los m² ya avanzados
+  // a la fecha — no solo el dato puntual del mes en curso ni solo el año
+  // calendario actual.
   // Si falta el dato de ALGÚN mes anterior en "Total Residuos" (p.ej. se
   // pisó el histórico al subir un Excel de un solo mes — writeTotalResiduos
   // reemplaza todo, no hace merge), no se suma como si ese mes fuera 0:
@@ -1229,7 +1279,9 @@ function fgrCalcMes(emp, mes){
   // marca "incompleto" para avisar en la UI.
   const m3Map = fgrLive.m3PorObraMes[emp.sucursal] || {};
   const co2Map = fgrLive.co2PorObraMes[emp.sucursal] || {};
-  let m3Acum = 0, co2Acum = 0, faltaAlgunMes = false;
+  let m3Acum = fgrLive.m3AnioAnteriorPorObra[emp.sucursal] || 0;
+  let co2Acum = fgrLive.co2AnioAnteriorPorObra[emp.sucursal] || 0;
+  let faltaAlgunMes = false;
   for (let i = 0; i <= MESES_ACTIVOS.indexOf(mes); i++){
     const mi = MESES_ACTIVOS[i];
     const vm3 = fgrMesKeyLookup(m3Map, mi);
@@ -1353,7 +1405,7 @@ function m2OnChange(empId, val){
   m2Dirty[emp.sucursal] = emp.m2total;
   clearTimeout(m2SaveTimer);
   m2SaveTimer = setTimeout(m2SaveDirty, M2_AUTOSAVE_MS);
-  if (vistaActual === "fgr") renderMain();
+  if (vistaActual === "fgr" || vistaActual === "obj") renderMain();
 }
 async function m2SaveDirty(){
   const sucursales = Object.keys(m2Dirty);
@@ -1383,6 +1435,64 @@ async function m2SaveDirty(){
     clearTimeout(m2SaveTimer);
     m2SaveTimer = setTimeout(m2SaveDirty, M2_AUTOSAVE_MS * 4);
   }
+}
+
+// ---------- Comparativo de KPIs por obra (panel global) ----------
+let kpiOpen = false;
+function kpiToggleOverlay(){
+  kpiOpen = !kpiOpen;
+  const el = mnEl("kpiOverlay");
+  if (el) el.className = "export-overlay" + (kpiOpen ? " open" : "");
+  if (kpiOpen) kpiRenderOverlay();
+}
+function kpiPctTxt(p){
+  if (p===null || p===undefined) return '<span style="color:var(--g300);">—</span>';
+  return '<span style="color:'+colorPct(p)+';font-weight:700;">'+p+'%</span>';
+}
+function kpiRenderOverlay(){
+  const sub = mnEl("kpiOverlaySub");
+  if (sub) sub.textContent = mesActual + " 2026 · " + EMPRESAS.length + " obras";
+  const body = mnEl("kpiOverlayBody");
+  if (!body) return;
+  const filas = EMPRESAS.map(function(emp){
+    const pTrazoMes = pctTrazMes(emp, mesActual);
+    const pTrazoAnu = pctTrazHasta(emp, mesActual);
+    const pValMes = esFuturo(mesActual) ? null : (emp.val.real[mesActual] ?? null);
+    const mesesHasta = MESES_ACTIVOS.slice(0, MESES_ACTIVOS.indexOf(mesActual)+1);
+    const acumDisponibles = mesesHasta.filter(function(m){ return emp.val.acumulado[m]!=null; });
+    const ultimoAcum = acumDisponibles[acumDisponibles.length-1];
+    const pValAnu = ultimoAcum!==undefined ? emp.val.acumulado[ultimoAcum] : null;
+    const avance = fgrLive ? fgrMesKeyLookup((fgrLive.avancePorObraMes[emp.sucursal]||{}), mesActual) : undefined;
+    const fgr = fgrCalcMes(emp, mesActual);
+    const objs = objetivosDe(emp, mesActual).filter(function(o){ return !o.sinDato; });
+    const objOk = objs.filter(function(o){ return o.ok; }).length;
+    return { emp: emp, pTrazoMes: pTrazoMes, pTrazoAnu: pTrazoAnu, pValMes: pValMes, pValAnu: pValAnu, avance: avance, fgr: fgr, objOk: objOk, objTot: objs.length };
+  });
+  body.innerHTML = '<table class="kpi-cmp-table">'
+    +'<thead><tr>'
+    +'<th>Obra</th><th>m² totales</th><th>% Avance</th>'
+    +'<th>Traz. mensual</th><th>Traz. anual</th>'
+    +'<th>%valorización mensual</th><th>%valorización anual</th>'
+    +'<th>FGR acum. (m³/m²)</th><th>CO2ev/m² acum.</th>'
+    +'<th>Objetivos</th>'
+    +'</tr></thead><tbody>'
+    +filas.map(function(f){
+      const emp = f.emp;
+      const objCol = f.objTot===0 ? 'var(--g300)' : (f.objOk>=f.objTot?'var(--ok)':f.objOk>=f.objTot*.5?'var(--warn)':'var(--err)');
+      return '<tr>'
+        +'<td>'+mnEscapeHtml(emp.sucursal)+'</td>'
+        +'<td>'+(emp.m2total?emp.m2total.toLocaleString("es-CL"):'<span style="color:var(--g300);">—</span>')+'</td>'
+        +'<td>'+(f.avance===undefined||f.avance===null?'<span style="color:var(--g300);">—</span>':f.avance+'%')+'</td>'
+        +'<td>'+kpiPctTxt(f.pTrazoMes)+'</td>'
+        +'<td>'+kpiPctTxt(f.pTrazoAnu)+'</td>'
+        +'<td>'+kpiPctTxt(f.pValMes)+'</td>'
+        +'<td>'+kpiPctTxt(f.pValAnu)+'</td>'
+        +'<td>'+(f.fgr.fgr===null||f.fgr.fgr===undefined?'<span style="color:var(--g300);">—</span>':f.fgr.fgr)+'</td>'
+        +'<td>'+(f.fgr.co2===null||f.fgr.co2===undefined?'<span style="color:var(--g300);">—</span>':f.fgr.co2.toLocaleString("es-CL",{maximumFractionDigits:7}))+'</td>'
+        +'<td style="font-weight:700;color:'+objCol+';">'+f.objOk+'/'+f.objTot+'</td>'
+        +'</tr>';
+    }).join("")
+    +'</tbody></table>';
 }
 
 function renderFGR(emp){
@@ -1430,7 +1540,7 @@ function renderFGR(emp){
   return html;
 }
 
-function setMes(m){ mesActual=m; renderSidebar(); renderMain(); }
+function setMes(m){ mesActual=m; renderSidebar(); renderMain(); if (kpiOpen) kpiRenderOverlay(); }
 function setEmp(id){ empActual=id; vistaActual='obj'; renderSidebar(); renderMain(); }
 function setVista(v){ vistaActual=v; renderMain(); }
 
