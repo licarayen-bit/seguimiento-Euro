@@ -1479,9 +1479,7 @@ function kpiRenderOverlay(){
   const body = mnEl("kpiOverlayBody");
   if (!body) return;
   const filas = EMPRESAS.map(function(emp){
-    const pTrazoMes = pctTrazMes(emp, mesActual);
     const pTrazoAnu = pctTrazHasta(emp, mesActual);
-    const pValMes = esFuturo(mesActual) ? null : (emp.val.real[mesActual] ?? null);
     const mesesHasta = MESES_ACTIVOS.slice(0, MESES_ACTIVOS.indexOf(mesActual)+1);
     const acumDisponibles = mesesHasta.filter(function(m){ return emp.val.acumulado[m]!=null; });
     const ultimoAcum = acumDisponibles[acumDisponibles.length-1];
@@ -1490,13 +1488,13 @@ function kpiRenderOverlay(){
     const fgr = fgrCalcMes(emp, mesActual);
     const objs = objetivosDe(emp, mesActual).filter(function(o){ return !o.sinDato; });
     const objOk = objs.filter(function(o){ return o.ok; }).length;
-    return { emp: emp, pTrazoMes: pTrazoMes, pTrazoAnu: pTrazoAnu, pValMes: pValMes, pValAnu: pValAnu, avance: avance, fgr: fgr, objOk: objOk, objTot: objs.length };
+    return { emp: emp, pTrazoAnu: pTrazoAnu, pValAnu: pValAnu, avance: avance, fgr: fgr, objOk: objOk, objTot: objs.length };
   });
   body.innerHTML = '<table class="kpi-cmp-table">'
     +'<thead><tr>'
     +'<th>Obra</th><th>m² totales</th><th>% Avance</th>'
-    +'<th>Traz. mensual</th><th>Traz. anual</th>'
-    +'<th>%valorización mensual</th><th>%valorización anual</th>'
+    +'<th>Traz. anual</th>'
+    +'<th>%valorización anual</th>'
     +'<th>FGR acum. (m³/m²)</th><th>CO2ev/m² acum.</th>'
     +'<th>Objetivos</th>'
     +'</tr></thead><tbody>'
@@ -1507,9 +1505,7 @@ function kpiRenderOverlay(){
         +'<td>'+mnEscapeHtml(emp.sucursal)+'</td>'
         +'<td>'+(emp.m2total?emp.m2total.toLocaleString("es-CL"):'<span style="color:var(--g300);">—</span>')+'</td>'
         +'<td>'+(f.avance===undefined||f.avance===null?'<span style="color:var(--g300);">—</span>':f.avance+'%')+'</td>'
-        +'<td>'+kpiPctTxt(f.pTrazoMes)+'</td>'
         +'<td>'+kpiPctTxt(f.pTrazoAnu)+'</td>'
-        +'<td>'+kpiPctTxt(f.pValMes)+'</td>'
         +'<td>'+kpiPctTxt(f.pValAnu)+'</td>'
         +'<td>'+(f.fgr.fgr===null||f.fgr.fgr===undefined?'<span style="color:var(--g300);">—</span>':f.fgr.fgr)+'</td>'
         +'<td>'+(f.fgr.co2===null||f.fgr.co2===undefined?'<span style="color:var(--g300);">—</span>':f.fgr.co2.toLocaleString("es-CL",{maximumFractionDigits:7}))+'</td>'
