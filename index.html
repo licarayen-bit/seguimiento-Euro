@@ -795,12 +795,9 @@ function renderSidebar(){
 }
 
 function renderKPIs(emp){
-  const pTrazoMes = pctTrazMes(emp, mesActual);
   const pTrazoAnu = pctTrazHasta(emp, mesActual);
   const pDocMes = pctDocMesEmp(emp, mesActual);
   const vd = emp.val;
-  const pValMes = esFuturo(mesActual) ? null : (vd.real[mesActual] ?? null);
-  const metaValM = vd.meta[mesActual] ?? 5;
   const mesesHasta = MESES_ACTIVOS.slice(0, MESES_ACTIVOS.indexOf(mesActual)+1);
   const acumDisponibles = mesesHasta.filter(function(m){ return vd.acumulado[m]!=null; });
   const ultimoAcum = acumDisponibles[acumDisponibles.length-1];
@@ -821,11 +818,9 @@ function renderKPIs(emp){
       +'</div></div>';
   }
 
-  return '<div class="kpi-row" style="grid-template-columns:repeat(5,1fr);">'
-    +kpiCard("Trazabilidad", pTrazoMes===null?"—":pTrazoMes+"%", mesActual+" · imp+transp+dest", pTrazoMes, "MENSUAL")
+  return '<div class="kpi-row" style="grid-template-columns:repeat(3,1fr);">'
     +kpiCard("Trazabilidad", pTrazoAnu===null?"—":pTrazoAnu+"%", "Ene–"+mesActual.slice(0,3)+" · acumulado", pTrazoAnu, "ANUAL")
     +kpiCard("Documentos cargados", pDocMes===null?"—":pDocMes+"%", mesActual+" · cert+fact+decl", pDocMes, "MENSUAL")
-    +kpiCard("Valorización", pValMes===null?"—":pValMes+"%", mesActual+(metaValM!=null?" · meta "+metaValM+"%":""), pValMes===null?null:(metaValM?Math.min(Math.round(pValMes/metaValM*100),100):pValMes), "MENSUAL")
     +(function(){
       const col = pValAnu===null?"var(--g300)":(pValAnu>=metaValA?"#039855":pValAnu>=(metaValA*.7)?"#F79009":"#F04438");
       const donut = pValAnu!==null ? donutSVG(Math.min(Math.round(pValAnu/(metaValA||100)*100),100), col) : '<svg width="38" height="38" viewBox="0 0 38 38" style="flex-shrink:0;"><circle cx="19" cy="19" r="14" fill="none" stroke="var(--g200)" stroke-width="5"/></svg>';
@@ -847,6 +842,35 @@ function renderObjetivos(emp){
     +'<div class="obj-grid">'
     +list.map(o=>{
       const sinDato = o.avance===null || o.avance===undefined;
+
+      // "Acompañamiento en terreno" (visitas): check verde / X roja en vez
+      // de barra de progreso — es un objetivo binario (se hizo o no).
+      if(/acompañamiento/i.test(o.texto)){
+        const icono = sinDato ? '<span style="color:var(--g300);font-size:22px;font-weight:700;">—</span>'
+          : o.ok ? '<span style="color:#039855;font-size:22px;font-weight:700;">✓</span>'
+          : '<span style="color:#F04438;font-size:22px;font-weight:700;">✗</span>';
+        return '<div class="obj-item">'
+          +'<div class="obj-text">'+o.texto+'</div>'
+          +'<div class="obj-prog" style="justify-content:flex-end;">'+icono+'</div>'
+          +'<div class="obj-detalle">'+o.detalle+'</div>'
+          +'</div>';
+      }
+
+      // "Valorizar fierro, madera, cartón": x/3 en vez de porcentaje — son 3
+      // residuos concretos, más claro contar cuántos van que mostrar "66,7%".
+      if(/fierro.*madera.*cart[oó]n/i.test(o.texto)){
+        const x = sinDato ? 0 : Math.round(o.avance/100*3);
+        const col = sinDato ? 'var(--g300)' : (x>=3?'#039855':x>0?'#F79009':'#F04438');
+        return '<div class="obj-item">'
+          +'<div class="obj-text">'+o.texto+'</div>'
+          +'<div class="obj-prog" style="justify-content:flex-end;">'
+          +'<span class="prog-lbl" style="color:'+col+';font-size:16px;">'+(sinDato?"—":x+"/3")+'</span>'
+          +(sinDato?'':(x>=3?'<span class="badge b-ok">✓</span>':'<span class="badge b-falta">✗</span>'))
+          +'</div>'
+          +'<div class="obj-detalle">'+o.detalle+'</div>'
+          +'</div>';
+      }
+
       const col = sinDato ? 'var(--g300)' : (o.ok?'#039855':(o.meta&&o.avance>=o.meta*0.7?'#F79009':'#F04438'));
       const pctBarra = sinDato ? 0 : (o.meta?Math.min(Math.round(o.avance/o.meta*100),100):Math.min(Math.round(o.avance),100));
       return '<div class="obj-item">'
