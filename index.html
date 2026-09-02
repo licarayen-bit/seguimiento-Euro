@@ -1486,15 +1486,30 @@ function kpiRenderOverlay(){
     const pValAnu = ultimoAcum!==undefined ? emp.val.acumulado[ultimoAcum] : null;
     const avance = fgrLive ? fgrMesKeyLookup((fgrLive.avancePorObraMes[emp.sucursal]||{}), mesActual) : undefined;
     const fgr = fgrCalcMes(emp, mesActual);
-    const objs = objetivosDe(emp, mesActual).filter(function(o){ return !o.sinDato; });
+    const objsAll = objetivosDe(emp, mesActual);
+    const objs = objsAll.filter(function(o){ return !o.sinDato; });
     const objOk = objs.filter(function(o){ return o.ok; }).length;
-    return { emp: emp, pTrazoAnu: pTrazoAnu, pValAnu: pValAnu, avance: avance, fgr: fgr, objOk: objOk, objTot: objs.length };
+    // Mismo criterio que renderObjetivos(): "Acompañamiento" (visitas) como
+    // check/X, "Valorizar fierro, madera, cartón" como x/3 — en vez de %.
+    const objAcomp = objsAll.find(function(o){ return /acompañamiento/i.test(o.texto); });
+    const objFmc = objsAll.find(function(o){ return /fierro.*madera.*cart[oó]n/i.test(o.texto); });
+    return { emp: emp, pTrazoAnu: pTrazoAnu, pValAnu: pValAnu, avance: avance, fgr: fgr, objOk: objOk, objTot: objs.length, objAcomp: objAcomp, objFmc: objFmc };
   });
+  function kpiAcompCell(o){
+    if (!o || o.avance===null || o.avance===undefined) return '<span style="color:var(--g300);">—</span>';
+    return o.ok ? '<span style="color:var(--ok);font-weight:700;">✓</span>' : '<span style="color:var(--err);font-weight:700;">✗</span>';
+  }
+  function kpiFmcCell(o){
+    if (!o || o.avance===null || o.avance===undefined) return '<span style="color:var(--g300);">—</span>';
+    const x = Math.round(o.avance/100*3);
+    return '<span style="color:'+(x>=3?'var(--ok)':x>0?'var(--warn)':'var(--err)')+';font-weight:700;">'+x+'/3</span>';
+  }
   body.innerHTML = '<table class="kpi-cmp-table">'
     +'<thead><tr>'
     +'<th>Obra</th><th>m² totales</th><th>% Avance</th>'
     +'<th>Traz. anual</th>'
     +'<th>%valorización anual</th>'
+    +'<th>Acompañamiento</th><th>Fierro/Madera/Cartón</th>'
     +'<th>FGR acum. (m³/m²)</th><th>CO2ev/m² acum.</th>'
     +'<th>Objetivos</th>'
     +'</tr></thead><tbody>'
@@ -1507,6 +1522,8 @@ function kpiRenderOverlay(){
         +'<td>'+(f.avance===undefined||f.avance===null?'<span style="color:var(--g300);">—</span>':f.avance+'%')+'</td>'
         +'<td>'+kpiPctTxt(f.pTrazoAnu)+'</td>'
         +'<td>'+kpiPctTxt(f.pValAnu)+'</td>'
+        +'<td>'+kpiAcompCell(f.objAcomp)+'</td>'
+        +'<td>'+kpiFmcCell(f.objFmc)+'</td>'
         +'<td>'+(f.fgr.fgr===null||f.fgr.fgr===undefined?'<span style="color:var(--g300);">—</span>':f.fgr.fgr)+'</td>'
         +'<td>'+(f.fgr.co2===null||f.fgr.co2===undefined?'<span style="color:var(--g300);">—</span>':f.fgr.co2.toLocaleString("es-CL",{maximumFractionDigits:7}))+'</td>'
         +'<td style="font-weight:700;color:'+objCol+';">'+f.objOk+'/'+f.objTot+'</td>'
