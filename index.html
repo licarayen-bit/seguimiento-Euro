@@ -1216,10 +1216,20 @@ async function fgrFetchLive(){
     // desglose por mes: FGR/CO2ev·m² son un acumulado desde el inicio real
     // del proyecto (pudo empezar en 2025 o antes), no solo año calendario.
     const m3AnioAnteriorPorObra = {}, co2AnioAnteriorPorObra = {};
+    // Excavación NO cuenta para el FGR (a pedido del usuario, 2026-09-04): el
+    // FGR mide "escombro y similares" generados por la obra, no la tierra de
+    // excavación removida al iniciar el proyecto — mismo criterio que ya usa
+    // valorizacion-recylink.html para excluir Excavación del % de
+    // valorización (ver esExcavacion/normResiduo ahí).
+    function esExcavacion_(residuo){
+      return String(residuo || "").trim().toLowerCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g, "") === "excavacion";
+    }
     (payload.totalResiduos || []).forEach(function(r){
       const suc = String(r.Sucursal || "").trim();
       const mes = String(r.Mes || "").trim();
       if (!suc || !mes) return;
+      if (esExcavacion_(r.Residuo)) return;
       const anio = String(r["Año"] || "").trim();
       const m3 = parseFloat(r["Total M3"]) || 0;
       const co2 = parseFloat(r["Tons. CO2eq. evitadas"]) || 0;
