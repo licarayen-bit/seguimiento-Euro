@@ -1301,16 +1301,38 @@ function fgrCalcMes(emp, mes){
   // eso subestimaría el acumulado en silencio. En ese caso se cae a los
   // valores horneados de este mes (mejor estimación disponible) y se
   // marca "incompleto" para avisar en la UI.
+  //
+  // FIX (2026-09-04, a pedido del usuario — caso real: Proyecto Zañartu):
+  // esto trataba CUALQUIER mes sin fila como "histórico perdido", incluidos
+  // los meses ANTES de que la obra tuviera su primer registro (obra nueva,
+  // sin actividad todavía — no es un hueco, es que aún no existía nada que
+  // registrar). Eso hacía que obras que arrancan a mitad de año (ej.
+  // Zañartu, que solo tiene datos desde Junio) nunca pudieran calcular su
+  // FGR/CO2 acumulado: el loop se cortaba en Enero y ni siquiera llegaba a
+  // sumar el m³ de Junio/Julio. Ahora se detecta el primer mes con datos
+  // reales para esta obra, y los meses ANTERIORES a ese se tratan como 0
+  // (obra sin actividad aún) — la protección contra histórico perdido sigue
+  // aplicando igual, pero solo para huecos DESPUÉS de que la obra ya tuvo
+  // su primer registro.
   const m3Map = fgrLive.m3PorObraMes[emp.sucursal] || {};
   const co2Map = fgrLive.co2PorObraMes[emp.sucursal] || {};
   let m3Acum = fgrLive.m3AnioAnteriorPorObra[emp.sucursal] || 0;
   let co2Acum = fgrLive.co2AnioAnteriorPorObra[emp.sucursal] || 0;
+  let primerMesIdx = null;
+  MESES_ACTIVOS.forEach(function(mi, i){
+    if (primerMesIdx !== null) return;
+    if (fgrMesKeyLookup(m3Map, mi) !== undefined || fgrMesKeyLookup(co2Map, mi) !== undefined) primerMesIdx = i;
+  });
   let faltaAlgunMes = false;
   for (let i = 0; i <= MESES_ACTIVOS.indexOf(mes); i++){
     const mi = MESES_ACTIVOS[i];
     const vm3 = fgrMesKeyLookup(m3Map, mi);
     const vco2 = fgrMesKeyLookup(co2Map, mi);
-    if (vm3 === undefined || vco2 === undefined) { faltaAlgunMes = true; break; }
+    if (vm3 === undefined || vco2 === undefined) {
+      if (primerMesIdx !== null && i < primerMesIdx) continue; // obra sin actividad aún, no es un hueco
+      faltaAlgunMes = true;
+      break;
+    }
     m3Acum += vm3;
     co2Acum += vco2;
   }
