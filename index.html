@@ -1431,6 +1431,19 @@ const M2_AUTOSAVE_MS = 1500;
 // con m2OnChange/m2SaveDirty) en vez de un input local aparte, a diferencia
 // de Socovesa (que usa localStorage) — para no duplicar la fuente de verdad
 // del m².
+// Último % de Avance conocido de una obra (el más reciente cargado en
+// "% de avance", no necesariamente el del mes seleccionado arriba — cada
+// obra puede tener su propio último mes con dato). Devuelve null si no hay
+// ningún % Avance cargado todavía.
+function ultimoAvance_(sucursal){
+  if (!fgrLive) return null;
+  const map = fgrLive.avancePorObraMes[sucursal] || {};
+  const mesesConDato = MESES_ACTIVOS.filter(function(m){ return fgrMesKeyLookup(map, m) !== undefined; });
+  if (!mesesConDato.length) return null;
+  const mes = mesesConDato[mesesConDato.length-1];
+  return { pct: fgrMesKeyLookup(map, mes), mes: mes };
+}
+
 function computeFGRFilas_(){
   const filas = EMPRESAS.map(function(emp){
     const m3Map = (fgrLive && fgrLive.m3PorObraMes[emp.sucursal]) || {};
@@ -1440,9 +1453,17 @@ function computeFGRFilas_(){
     const primerReg = registros[0] || null;
     const ultimoReg = registros[registros.length-1] || null;
     const m2 = emp.m2total;
+    const avanceInfo = ultimoAvance_(emp.sucursal);
+    // m² construidos = m² totales × % Avance más reciente (a pedido del
+    // usuario, 2026-09-05: "mostrar los m2 construidos en lugar de los m2
+    // totales") — mismo criterio que fgrCalcMes() usa para la pestaña FGR
+    // de cada obra (m2Avanzados), así ambas vistas quedan consistentes
+    // entre sí (antes usaban bases distintas: esta comparativa dividía por
+    // m2 totales completos, la pestaña por obra por m2 avanzados).
+    const m2Construidos = (m2 && avanceInfo) ? Math.round(m2 * avanceInfo.pct / 100 * 100) / 100 : null;
     const tieneM3 = totalM3 > 0;
-    const fgrVal = (m2 && m2>0 && tieneM3) ? Math.round(totalM3/m2*1000)/1000 : null;
-    return { emp: emp, totalM3: totalM3, tieneM3: tieneM3, primerReg: primerReg, ultimoReg: ultimoReg, m2: m2, fgrVal: fgrVal };
+    const fgrVal = (m2Construidos && m2Construidos>0 && tieneM3) ? Math.round(totalM3/m2Construidos*1000)/1000 : null;
+    return { emp: emp, totalM3: totalM3, tieneM3: tieneM3, primerReg: primerReg, ultimoReg: ultimoReg, m2: m2, avanceInfo: avanceInfo, m2Construidos: m2Construidos, fgrVal: fgrVal };
   });
   const totalM3Global = filas.reduce(function(s,f){ return s+(f.totalM3||0); }, 0);
   const conFgr = filas.filter(function(f){ return f.fgrVal!==null; });
@@ -1467,7 +1488,7 @@ function renderFGRComparativo_(){
       <div class="kpi">
         <div class="kpi-lbl">Obras con FGR calculado</div>
         <div class="kpi-val">${conFgr.length} / ${filas.length}</div>
-        <div class="kpi-desc">Requiere m² totales cargados</div>
+        <div class="kpi-desc">Requiere m² totales y % Avance cargados</div>
       </div>
       <div class="kpi">
         <div class="kpi-lbl">FGR promedio</div>
@@ -1484,7 +1505,7 @@ function renderFGRComparativo_(){
       <div class="card-header">
         <div>
           <div class="card-title">Factor de Generación de Residuos (FGR) · comparativa entre obras</div>
-          <div class="card-sub">FGR = Total m3 de residuos generados (excluye Excavación) ÷ m2 totales del proyecto · meta ≤ ${META_FGR}</div>
+          <div class="card-sub">FGR = Total m3 de residuos generados (excluye Excavación) ÷ m2 construidos (m2 totales × % Avance) · meta ≤ ${META_FGR}</div>
         </div>
       </div>
       <div style="overflow-x:auto;">
@@ -1494,8 +1515,8 @@ function renderFGRComparativo_(){
             <th style="padding:8px 12px;font-size:10px;font-weight:700;color:var(--tx2);text-align:left;border-bottom:1px solid var(--bd);">PRIMER REGISTRO</th>
             <th style="padding:8px 12px;font-size:10px;font-weight:700;color:var(--tx2);text-align:left;border-bottom:1px solid var(--bd);">ÚLTIMO REGISTRO</th>
             <th style="padding:8px 12px;font-size:10px;font-weight:700;color:var(--tx2);text-align:right;border-bottom:1px solid var(--bd);">TOTAL M3</th>
-            <th style="padding:8px 12px;font-size:10px;font-weight:700;color:var(--tx2);text-align:right;border-bottom:1px solid var(--bd);min-width:160px;">M2 TOTALES</th>
-            <th style="padding:8px 12px;font-size:10px;font-weight:700;color:var(--tx2);text-align:right;border-bottom:1px solid var(--bd);">FGR</th>
+            <th style="padding:10px 16px;font-size:10px;font-weight:700;color:var(--tx2);text-align:right;border-bottom:1px solid var(--bd);min-width:260px;">M2 CONSTRUIDOS</th>
+            <th style="padding:10px 16px;font-size:10px;font-weight:700;color:var(--tx2);text-align:right;border-bottom:1px solid var(--bd);min-width:110px;">FGR</th>
           </tr></thead>
           <tbody>
             ${filas.map(function(f, i){
@@ -1503,19 +1524,26 @@ function renderFGRComparativo_(){
               const bg = esActual ? 'background:#EAF2FA;' : (i%2 ? 'background:var(--g25);' : '');
               const m3Fmt = f.tieneM3 ? f.totalM3.toLocaleString('es-CL',{maximumFractionDigits:2}) : "—";
               const fgrFmt = f.fgrVal===null ? "—" : f.fgrVal.toLocaleString('es-CL',{maximumFractionDigits:3});
+              const fgrCol = f.fgrVal===null ? 'var(--g300)' : f.fgrVal<=META_FGR ? '#039855' : f.fgrVal<=META_FGR*2 ? '#F79009' : '#F04438';
+              const m2ConstruidosFmt = f.m2Construidos!=null ? f.m2Construidos.toLocaleString('es-CL',{maximumFractionDigits:2})+' m²' : '—';
               return `<tr style="${bg}">
                 <td style="padding:9px 14px;font-size:12px;font-weight:${esActual?'700':'500'};color:${esActual?'var(--brand)':'var(--g800)'};">${mnEscapeHtml(f.emp.sucursal)}</td>
                 <td style="padding:9px 12px;font-size:12px;color:var(--g600);">${f.primerReg ? f.primerReg.mes+' '+f.primerReg.anio : "—"}</td>
                 <td style="padding:9px 12px;font-size:12px;color:var(--g600);">${f.ultimoReg ? f.ultimoReg.mes+' '+f.ultimoReg.anio : "—"}</td>
                 <td style="padding:9px 12px;font-size:12px;font-weight:700;color:var(--g800);text-align:right;">${m3Fmt}</td>
-                <td style="padding:6px 12px;text-align:right;">
-                  <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">
+                <td style="padding:10px 16px;text-align:right;">
+                  <div style="font-size:15px;font-weight:800;color:var(--g900);">${m2ConstruidosFmt}</div>
+                  <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:4px;">
+                    <span style="font-size:10px;color:var(--g400);">m² totales</span>
                     <input type="number" min="0" step="0.01" value="${f.m2??''}" placeholder="m2"
                       style="width:78px;padding:4px 6px;border:1.5px solid var(--bd);border-radius:6px;font-family:inherit;font-size:12px;font-weight:600;color:var(--tx);text-align:right;"
                       onchange="m2OnChange('${f.emp.id}',this.value)">
                   </div>
+                  <div style="font-size:10px;color:var(--g400);margin-top:2px;">${f.avanceInfo ? '% Avance '+f.avanceInfo.mes+': '+f.avanceInfo.pct+'%' : 'Sin % Avance cargado'}</div>
                 </td>
-                <td style="padding:9px 12px;font-size:13px;font-weight:800;color:var(--brand);text-align:right;">${fgrFmt}</td>
+                <td style="padding:10px 16px;text-align:right;">
+                  <span style="display:inline-block;padding:4px 10px;border-radius:8px;font-size:16px;font-weight:800;color:${fgrCol};background:${f.fgrVal===null?'transparent':fgrCol+'1A'};">${fgrFmt}</span>
+                </td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -1552,7 +1580,7 @@ function renderFGRGlobal(){
 function exportarFGRExcel(){
   const { filas } = computeFGRFilas_();
   const rows = [
-    ['Obra', 'Primer Registro', 'Último Registro', 'Total M3', 'M2 Totales', 'FGR (m3/m2)']
+    ['Obra', 'Primer Registro', 'Último Registro', 'Total M3', 'M2 Totales', '% Avance', 'M2 Construidos', 'FGR (m3/m2)']
   ];
   // Numeros con coma decimal ("es-CL") — Excel en español espera coma como
   // separador decimal; con punto interpreta el valor como texto.
@@ -1563,6 +1591,8 @@ function exportarFGRExcel(){
       f.ultimoReg ? f.ultimoReg.mes+' '+f.ultimoReg.anio : '',
       f.tieneM3 ? f.totalM3.toLocaleString('es-CL',{maximumFractionDigits:2}) : '',
       (f.m2!=null) ? f.m2.toLocaleString('es-CL',{maximumFractionDigits:2}) : '',
+      f.avanceInfo ? (f.avanceInfo.pct+'% ('+f.avanceInfo.mes+')') : '',
+      f.m2Construidos!=null ? f.m2Construidos.toLocaleString('es-CL',{maximumFractionDigits:2}) : '',
       f.fgrVal!==null ? f.fgrVal.toLocaleString('es-CL',{maximumFractionDigits:3}) : ''
     ]);
   });
@@ -1590,14 +1620,16 @@ function exportarFGRPDF(){
 
   const filasHtml = filas.map(function(f,i){
     const m3Fmt  = f.tieneM3 ? f.totalM3.toLocaleString('es-CL',{maximumFractionDigits:2}) : '—';
-    const m2Fmt  = (f.m2!=null) ? f.m2 : '—';
+    const m2ConstruidosFmt = f.m2Construidos!=null ? f.m2Construidos.toLocaleString('es-CL',{maximumFractionDigits:2}) : '—';
+    const avanceFmt = f.avanceInfo ? f.avanceInfo.pct+'% ('+f.avanceInfo.mes+')' : '—';
     const fgrFmt = f.fgrVal===null ? '—' : f.fgrVal.toLocaleString('es-CL',{maximumFractionDigits:3});
     return '<tr style="'+(i%2?'background:#F9FAFB;':'')+'">'
       +'<td style="padding:8px 10px;text-align:left;font-weight:600;">'+mnEscapeHtml(f.emp.sucursal)+'</td>'
       +'<td style="padding:8px 10px;">'+(f.primerReg ? f.primerReg.mes+' '+f.primerReg.anio : '—')+'</td>'
       +'<td style="padding:8px 10px;">'+(f.ultimoReg ? f.ultimoReg.mes+' '+f.ultimoReg.anio : '—')+'</td>'
       +'<td style="padding:8px 10px;text-align:right;">'+m3Fmt+'</td>'
-      +'<td style="padding:8px 10px;text-align:right;">'+m2Fmt+'</td>'
+      +'<td style="padding:8px 10px;text-align:right;">'+avanceFmt+'</td>'
+      +'<td style="padding:8px 10px;text-align:right;">'+m2ConstruidosFmt+'</td>'
       +'<td style="padding:8px 10px;text-align:right;font-weight:700;color:'+EMPRESA_COLOR+';">'+fgrFmt+'</td>'
       +'</tr>';
   }).join('');
@@ -1624,11 +1656,11 @@ function exportarFGRPDF(){
     +'<div class="hdr-r">'+EMPRESA_NOMBRE+' · FGR — comparativa entre obras<br>Generado el '+fecha+'</div></div>'
     +'<div class="kgrid">'
     +'<div class="kbox"><div class="klbl">Total M3 (todas las obras)</div><div class="kval">'+(totalM3Global>0?totalM3Global.toLocaleString('es-CL',{maximumFractionDigits:2}):'—')+'</div><div class="kdesc">Suma histórica · excluye Excavación</div></div>'
-    +'<div class="kbox"><div class="klbl">Obras con FGR calculado</div><div class="kval">'+conFgr.length+' / '+filas.length+'</div><div class="kdesc">Requiere m2 totales cargados</div></div>'
+    +'<div class="kbox"><div class="klbl">Obras con FGR calculado</div><div class="kval">'+conFgr.length+' / '+filas.length+'</div><div class="kdesc">Requiere m2 totales y % Avance cargados</div></div>'
     +'<div class="kbox"><div class="klbl">FGR promedio</div><div class="kval">'+(fgrProm===null?'—':fgrProm)+'</div><div class="kdesc">m3 ÷ m2 · entre obras con dato</div></div>'
     +'<div class="kbox"><div class="klbl">Mejor FGR</div><div class="kval" style="font-size:16px;">'+(mejor?mejor.fgrVal:'—')+'</div><div class="kdesc">'+(mejor?mnEscapeHtml(mejor.emp.sucursal):'Sin datos suficientes')+'</div></div>'
     +'</div>'
-    +'<table><thead><tr><th>Obra</th><th>Primer Registro</th><th>Último Registro</th><th style="text-align:right;">Total M3</th><th style="text-align:right;">M2 Totales</th><th style="text-align:right;">FGR</th></tr></thead>'
+    +'<table><thead><tr><th>Obra</th><th>Primer Registro</th><th>Último Registro</th><th style="text-align:right;">Total M3</th><th style="text-align:right;">% Avance</th><th style="text-align:right;">M2 Construidos</th><th style="text-align:right;">FGR</th></tr></thead>'
     +'<tbody>'+filasHtml+'</tbody></table>'
     +'<div class="ftr"><span>Recylink · Portal de Trazabilidad</span><span>'+EMPRESA_NOMBRE+' · Comparativa FGR</span><span>Generado el '+fecha+'</span></div>'
     +'<script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script>'
