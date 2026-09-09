@@ -238,8 +238,8 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
     <button class="mn-topbtn" id="mnAccessBtn" type="button" onclick="mnToggleVista()" style="height:34px;">
       📝 <span id="mnAccessBtnLabel">Minutas</span>
     </button>
-    <button class="mn-topbtn" type="button" onclick="m2ToggleOverlay()" style="height:34px;">
-      📐 M² Obras
+    <button class="mn-topbtn" type="button" onclick="fgrCompToggleOverlay()" style="height:34px;">
+      🌱 FGR Comparativo
     </button>
     <button class="mn-topbtn" type="button" onclick="kpiToggleOverlay()" style="height:34px;">
       📊 Comparar KPIs
@@ -277,12 +277,12 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
   </div>
 </div>
 
-<div class="export-overlay" id="m2Overlay" onclick="if(event.target===this)m2ToggleOverlay()">
-  <div class="m2-modal">
-    <div class="export-modal-title">M² totales por obra</div>
-    <div class="export-modal-sub">Se usan para calcular FGR y CO2ev/m² en la pestaña FGR de cada obra. Se guardan solas ~1.5s después de editar.</div>
-    <div id="m2OverlayBody"></div>
-    <button class="export-cancel" onclick="m2ToggleOverlay()">Cerrar</button>
+<div class="export-overlay" id="fgrCompOverlay" onclick="if(event.target===this)fgrCompToggleOverlay()">
+  <div class="kpi-modal">
+    <div class="export-modal-title">FGR Comparativo</div>
+    <div class="export-modal-sub">Factor de Generación de Residuos por obra · edita el m² totales acá mismo, se guarda solo ~1.5s después.</div>
+    <div style="overflow-x:auto;"><div id="fgrCompOverlayBody"></div></div>
+    <button class="export-cancel" onclick="fgrCompToggleOverlay()">Cerrar</button>
   </div>
 </div>
 
@@ -1206,6 +1206,13 @@ async function fgrFetchLive(){
       return String(residuo || "").trim().toLowerCase()
         .normalize("NFD").replace(/[̀-ͯ]/g, "") === "excavacion";
     }
+    // Primer/último mes con registro real (para el comparativo FGR entre
+    // obras, ver fgrCompRenderOverlay) — igual criterio que
+    // construirFgrInfo_ en Code-Socovesa.gs: se arma con TODOS los años
+    // (no solo FGR_ANIO_ACTUAL), sin desglose por mes/año en el resultado
+    // final, solo para encontrar el primer y último registro. Excavación
+    // tampoco cuenta acá (mismo criterio que el resto del cálculo de FGR).
+    const registrosPorObra = {};
     (payload.totalResiduos || []).forEach(function(r){
       const suc = String(r.Sucursal || "").trim();
       const mes = String(r.Mes || "").trim();
@@ -1214,6 +1221,12 @@ async function fgrFetchLive(){
       const anio = String(r["Año"] || "").trim();
       const m3 = parseFloat(r["Total M3"]) || 0;
       const co2 = parseFloat(r["Tons. CO2eq. evitadas"]) || 0;
+      const mesNorm = MESES.find(function(m){ return m.toLowerCase() === mes.toLowerCase(); }) || mes;
+      const mesIdx = MESES.indexOf(mesNorm);
+      if (anio && mesIdx !== -1){
+        registrosPorObra[suc] = registrosPorObra[suc] || [];
+        registrosPorObra[suc].push({ anio: anio, mes: mesNorm, orden: parseInt(anio, 10) * 100 + (mesIdx + 1) });
+      }
       if (anio && anio !== FGR_ANIO_ACTUAL){
         m3AnioAnteriorPorObra[suc] = (m3AnioAnteriorPorObra[suc] || 0) + m3;
         co2AnioAnteriorPorObra[suc] = (co2AnioAnteriorPorObra[suc] || 0) + co2;
@@ -1245,13 +1258,14 @@ async function fgrFetchLive(){
     });
     fgrLive = {
       m3PorObraMes: m3PorObraMes, co2PorObraMes: co2PorObraMes, avancePorObraMes: avancePorObraMes,
-      m3AnioAnteriorPorObra: m3AnioAnteriorPorObra, co2AnioAnteriorPorObra: co2AnioAnteriorPorObra
+      m3AnioAnteriorPorObra: m3AnioAnteriorPorObra, co2AnioAnteriorPorObra: co2AnioAnteriorPorObra,
+      registrosPorObra: registrosPorObra
     };
 
     // m² totales por obra: viven en la fila "m2 totales" de "% de avance"
     // (readAvanceSheet_ ya las expone en m2Totales). Se usan para
     // sobreescribir el m2total horneado de EMPRESAS con el valor real del
-    // Sheet — así el panel "M² Obras" parte con lo que ya haya cargado.
+    // Sheet — así el panel "FGR Comparativo" parte con lo que ya haya cargado.
     const m2Totales = (payload.avance && payload.avance.m2Totales) || {};
     EMPRESAS.forEach(function(emp){
       const v = m2Totales[emp.sucursal];
@@ -1259,7 +1273,7 @@ async function fgrFetchLive(){
       const num = parseFloat(v);
       if (!isNaN(num)) emp.m2total = num;
     });
-    if (m2Open) m2RenderOverlay();
+    if (fgrCompOpen) fgrCompRenderOverlay();
     if (kpiOpen) kpiRenderOverlay();
   } catch(err){
     console.warn("No se pudo cargar % Avance / Total Residuos en vivo para FGR:", err);
@@ -1412,28 +1426,79 @@ async function fgrSaveAvanceDirty(){
 // se pueden actualizar obras que YA tengan columna ahí — si una obra
 // nueva no tiene columna todavía, writeM2Totales_ avisa cuáles no pudo
 // guardar en vez de fallar en silencio.
-let m2Open = false;
 let m2Dirty = {}; // { sucursal: m2 }
 let m2SaveTimer = null;
 const M2_AUTOSAVE_MS = 1500;
 
-function m2ToggleOverlay(){
-  m2Open = !m2Open;
-  const el = mnEl("m2Overlay");
-  if (el) el.className = "export-overlay" + (m2Open ? " open" : "");
-  if (m2Open) m2RenderOverlay();
+// ---------- FGR Comparativo (panel global) — reemplaza el botón "M² Obras"
+// a pedido del usuario (2026-09-04: "similar al de socovesa"). Mismo
+// mecanismo de comparativa cross-obra que Code-Socovesa.gs/
+// Visor-de-Objetivos-Gespania (Obra | Primer registro | Último registro |
+// Total M3 | M2 totales | FGR), pero reutilizando emp.m2total (ya viene
+// del Sheet vía fgrFetchLive y se guarda con m2OnChange/m2SaveDirty, en vez
+// de un input local aparte) para no duplicar la fuente de verdad del m².
+let fgrCompOpen = false;
+
+function fgrCompToggleOverlay(){
+  fgrCompOpen = !fgrCompOpen;
+  const el = mnEl("fgrCompOverlay");
+  if (el) el.className = "export-overlay" + (fgrCompOpen ? " open" : "");
+  if (fgrCompOpen) fgrCompRenderOverlay();
 }
-function m2RenderOverlay(){
-  const body = mnEl("m2OverlayBody");
+
+function fgrCompRenderOverlay(){
+  const body = mnEl("fgrCompOverlayBody");
   if (!body) return;
-  body.innerHTML = EMPRESAS.map(function(emp){
-    return '<div class="m2-row">'
-      +'<div style="flex:1;font-size:12.5px;font-weight:600;color:var(--g700);">'+mnEscapeHtml(emp.sucursal)+'</div>'
-      +'<input type="number" min="0" step="0.01" value="'+(emp.m2total===null||emp.m2total===undefined?"":emp.m2total)+'" placeholder="—" onchange="m2OnChange(\''+emp.id+'\',this.value)">'
-      +'<span style="font-size:11px;color:var(--g400);width:16px;">m²</span>'
-      +'</div>';
-  }).join("");
+  if (!fgrLive){
+    body.innerHTML = '<div class="empty">Cargando datos de Total Residuos…</div>';
+    return;
+  }
+
+  const filas = EMPRESAS.map(function(emp){
+    const m3Map = fgrLive.m3PorObraMes[emp.sucursal] || {};
+    const totalM3 = Object.keys(m3Map).reduce(function(s,m){ return s + m3Map[m]; }, 0)
+      + (fgrLive.m3AnioAnteriorPorObra[emp.sucursal] || 0);
+    const registros = (fgrLive.registrosPorObra[emp.sucursal] || []).slice().sort(function(a,b){ return a.orden - b.orden; });
+    const primerReg = registros[0] || null;
+    const ultimoReg = registros[registros.length-1] || null;
+    const m2 = emp.m2total;
+    const tieneM3 = totalM3 > 0;
+    const fgrVal = (m2 && m2>0 && tieneM3) ? Math.round(totalM3/m2*1000)/1000 : null;
+    return { emp: emp, totalM3: totalM3, tieneM3: tieneM3, primerReg: primerReg, ultimoReg: ultimoReg, m2: m2, fgrVal: fgrVal };
+  });
+
+  const totalM3Global = filas.reduce(function(s,f){ return s+(f.totalM3||0); }, 0);
+  const conFgr = filas.filter(function(f){ return f.fgrVal!==null; });
+  const fgrProm = conFgr.length ? Math.round(conFgr.reduce(function(s,f){ return s+f.fgrVal; },0)/conFgr.length*1000)/1000 : null;
+  const mejor = conFgr.length ? conFgr.reduce(function(a,b){ return a.fgrVal<=b.fgrVal?a:b; }) : null;
+  function fgrColor(v){ return v===null ? 'var(--g400)' : v<=META_FGR ? '#039855' : v<=META_FGR*2 ? '#F79009' : '#F04438'; }
+
+  body.innerHTML = ''
+    +'<div class="kpi-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;">'
+    +'<div class="kpi"><div class="kpi-lbl">Total M3 (todas las obras)</div><div class="kpi-val">'+(totalM3Global>0?totalM3Global.toLocaleString('es-CL',{maximumFractionDigits:2}):"—")+'</div><div class="kpi-desc">Suma histórica · excluye Excavación</div></div>'
+    +'<div class="kpi"><div class="kpi-lbl">Obras con FGR calculado</div><div class="kpi-val">'+conFgr.length+' / '+filas.length+'</div><div class="kpi-desc">Requiere m² totales cargados</div></div>'
+    +'<div class="kpi"><div class="kpi-lbl">FGR promedio</div><div class="kpi-val" style="color:'+fgrColor(fgrProm)+';">'+(fgrProm===null?"—":fgrProm)+'</div><div class="kpi-desc">m³ ÷ m² · entre obras con dato</div></div>'
+    +'<div class="kpi highlight"><div class="kpi-lbl">Mejor FGR</div><div class="kpi-val" style="font-size:16px;color:'+(mejor?fgrColor(mejor.fgrVal):'var(--g400)')+';">'+(mejor?mejor.fgrVal:"—")+'</div><div class="kpi-desc">'+(mejor?mnEscapeHtml(mejor.emp.sucursal):"Sin datos suficientes")+'</div></div>'
+    +'</div>'
+    +'<table class="kpi-cmp-table"><thead><tr>'
+    +'<th>Obra</th><th>Primer registro</th><th>Último registro</th><th>Total M3</th><th>M2 totales</th><th>FGR (meta ≤ '+META_FGR+')</th>'
+    +'</tr></thead><tbody>'
+    +filas.map(function(f){
+      const m3Fmt = f.tieneM3 ? f.totalM3.toLocaleString('es-CL',{maximumFractionDigits:2}) : "—";
+      const fgrFmt = f.fgrVal===null ? "—" : f.fgrVal.toLocaleString('es-CL',{maximumFractionDigits:3});
+      return '<tr>'
+        +'<td>'+mnEscapeHtml(f.emp.sucursal)+'</td>'
+        +'<td>'+(f.primerReg ? f.primerReg.mes+' '+f.primerReg.anio : '<span style="color:var(--g300);">—</span>')+'</td>'
+        +'<td>'+(f.ultimoReg ? f.ultimoReg.mes+' '+f.ultimoReg.anio : '<span style="color:var(--g300);">—</span>')+'</td>'
+        +'<td style="font-weight:700;">'+m3Fmt+'</td>'
+        +'<td><span style="display:inline-flex;align-items:center;gap:4px;"><input type="number" min="0" step="0.01" style="width:90px;" value="'+(f.m2===null||f.m2===undefined?"":f.m2)+'" placeholder="—" onchange="m2OnChange(\''+f.emp.id+'\',this.value)"><span style="font-size:11px;color:var(--g400);">m²</span></span></td>'
+        +'<td style="font-weight:700;color:'+fgrColor(f.fgrVal)+';">'+fgrFmt+'</td>'
+        +'</tr>';
+    }).join("")
+    +'</tbody></table>'
+    +'<div class="legend"><div class="leg-item">FGR = Total M3 histórico de residuos (excluye Excavación) ÷ M2 totales del proyecto. Menor es mejor.</div></div>';
 }
+
 function m2OnChange(empId, val){
   const emp = EMPRESAS.find(function(e){ return e.id===empId; });
   if (!emp) return;
@@ -1442,6 +1507,7 @@ function m2OnChange(empId, val){
   m2Dirty[emp.sucursal] = emp.m2total;
   clearTimeout(m2SaveTimer);
   m2SaveTimer = setTimeout(m2SaveDirty, M2_AUTOSAVE_MS);
+  if (fgrCompOpen) fgrCompRenderOverlay();
   if (vistaActual === "fgr" || vistaActual === "obj") renderMain();
 }
 async function m2SaveDirty(){
