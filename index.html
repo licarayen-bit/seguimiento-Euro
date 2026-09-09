@@ -841,36 +841,17 @@ function renderObjetivos(emp){
     +'<div class="card-header"><div class="card-title">Objetivos 2026</div><div class="card-sub">Enero → '+mesActual+' · '+emp.sucursal+'</div></div>'
     +'<div class="obj-grid">'
     +list.map(o=>{
+      // "Acompañamiento en terreno" y "Valorizar fierro, madera, cartón"
+      // tenían un estilo especial acá (check/X y x/3 en vez de barra de
+      // progreso) — a pedido del usuario (2026-09-04: "quiero que la
+      // estética... sea similar a las otras") se quita ese trato especial
+      // en ESTA vista (Objetivos 2026) y quedan con la misma barra de
+      // progreso que el resto; objetivosStatic ya trae avance/meta como
+      // porcentaje 0-100, así que el renderer genérico de abajo les sirve
+      // igual sin ningún cálculo adicional. El panel comparativo de KPIs
+      // (kpiAcompCell/kpiFmcCell) sigue con su propio estilo check/x / x-3,
+      // sin cambios — eso se pidió explícitamente aparte.
       const sinDato = o.avance===null || o.avance===undefined;
-
-      // "Acompañamiento en terreno" (visitas): check verde / X roja en vez
-      // de barra de progreso — es un objetivo binario (se hizo o no).
-      if(/acompañamiento/i.test(o.texto)){
-        const icono = sinDato ? '<span style="color:var(--g300);font-size:22px;font-weight:700;">—</span>'
-          : o.ok ? '<span style="color:#039855;font-size:22px;font-weight:700;">✓</span>'
-          : '<span style="color:#F04438;font-size:22px;font-weight:700;">✗</span>';
-        return '<div class="obj-item">'
-          +'<div class="obj-text">'+o.texto+'</div>'
-          +'<div class="obj-prog" style="justify-content:flex-end;">'+icono+'</div>'
-          +'<div class="obj-detalle">'+o.detalle+'</div>'
-          +'</div>';
-      }
-
-      // "Valorizar fierro, madera, cartón": x/3 en vez de porcentaje — son 3
-      // residuos concretos, más claro contar cuántos van que mostrar "66,7%".
-      if(/fierro.*madera.*cart[oó]n/i.test(o.texto)){
-        const x = sinDato ? 0 : Math.round(o.avance/100*3);
-        const col = sinDato ? 'var(--g300)' : (x>=3?'#039855':x>0?'#F79009':'#F04438');
-        return '<div class="obj-item">'
-          +'<div class="obj-text">'+o.texto+'</div>'
-          +'<div class="obj-prog" style="justify-content:flex-end;">'
-          +'<span class="prog-lbl" style="color:'+col+';font-size:16px;">'+(sinDato?"—":x+"/3")+'</span>'
-          +(sinDato?'':(x>=3?'<span class="badge b-ok">✓</span>':'<span class="badge b-falta">✗</span>'))
-          +'</div>'
-          +'<div class="obj-detalle">'+o.detalle+'</div>'
-          +'</div>';
-      }
-
       const col = sinDato ? 'var(--g300)' : (o.ok?'#039855':(o.meta&&o.avance>=o.meta*0.7?'#F79009':'#F04438'));
       const pctBarra = sinDato ? 0 : (o.meta?Math.min(Math.round(o.avance/o.meta*100),100):Math.min(Math.round(o.avance),100));
       return '<div class="obj-item">'
