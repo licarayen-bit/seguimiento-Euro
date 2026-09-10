@@ -1210,7 +1210,7 @@ async function fgrFetchLive(){
     // Años anteriores a FGR_ANIO_ACTUAL se acumulan aparte, por obra, sin
     // desglose por mes: FGR/CO2ev·m² son un acumulado desde el inicio real
     // del proyecto (pudo empezar en 2025 o antes), no solo año calendario.
-    const m3AnioAnteriorPorObra = {}, co2AnioAnteriorPorObra = {};
+    const m3AnioAnteriorPorObra = {}, co2AnioAnteriorPorObra = {}, m3ValAnioAnteriorPorObra = {};
     // Excavación NO cuenta para el FGR (a pedido del usuario, 2026-09-04): el
     // FGR mide "escombro y similares" generados por la obra, no la tierra de
     // excavación removida al iniciar el proyecto — mismo criterio que ya usa
@@ -1262,6 +1262,7 @@ async function fgrFetchLive(){
       if (anio && anio !== FGR_ANIO_ACTUAL){
         m3AnioAnteriorPorObra[suc] = (m3AnioAnteriorPorObra[suc] || 0) + m3;
         co2AnioAnteriorPorObra[suc] = (co2AnioAnteriorPorObra[suc] || 0) + co2;
+        if (valorizado) m3ValAnioAnteriorPorObra[suc] = (m3ValAnioAnteriorPorObra[suc] || 0) + m3;
         return;
       }
       m3PorObraMes[suc] = m3PorObraMes[suc] || {};
@@ -1273,17 +1274,19 @@ async function fgrFetchLive(){
         m3ValPorObraMes[suc][mes] = (m3ValPorObraMes[suc][mes] || 0) + m3;
       }
     });
-    // % Real (del mes) y % Acumulado (Enero→mes, dentro de FGR_ANIO_ACTUAL,
-    // sin arrastrar años anteriores — a diferencia del FGR, el % de
-    // valorización acumulado siempre fue year-to-date en este sistema, ver
-    // getAcum() en valorizacion-recylink.html) — solo se sobreescribe el mes
-    // si ese mes (o el acumulado hasta ahí) tiene m3 Total real, para no
-    // pisar con "0%" un mes sin datos.
+    // % Real (del mes) — solo ese mes. % Acumulado — a pedido del usuario
+    // (2026-09-10, caso real Proyecto Santa Elena: "me da 20,4% cuando
+    // debería ser 12,2%"): NO es year-to-date de FGR_ANIO_ACTUAL, es
+    // acumulado desde el INICIO REAL del proyecto (pudo empezar en 2025 o
+    // antes) — mismo criterio que el FGR (m3AnioAnteriorPorObra). Por eso
+    // arranca la suma con lo acumulado en años anteriores antes de sumar
+    // mes a mes el año en curso.
     EMPRESAS.forEach(function(emp){
       const suc = emp.sucursal;
       const totMap = m3PorObraMes[suc] || {};
       const valMap = m3ValPorObraMes[suc] || {};
-      let acumTot = 0, acumVal = 0;
+      let acumTot = m3AnioAnteriorPorObra[suc] || 0;
+      let acumVal = m3ValAnioAnteriorPorObra[suc] || 0;
       MESES.forEach(function(m){
         const tot = totMap[m];
         if (tot !== undefined){
