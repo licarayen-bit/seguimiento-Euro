@@ -566,7 +566,11 @@ const EMPRESAS = [
 }
 ];
 
-let mesActual = "Julio";
+// Arranca en el último mes activo (antes quedaba fijo en "Julio" a mano —
+// a pedido del usuario, 2026-09-10: al agregar Agosto a MESES_ACTIVOS, el
+// visor seguía abriendo en Julio por defecto y había que cambiar el
+// selector a mano para ver el mes en curso).
+let mesActual = MESES_ACTIVOS[MESES_ACTIVOS.length - 1];
 let empActual = EMPRESAS[0].id;
 let vistaActual = "obj";
 let vistaGlobal = "empresa"; // "empresa" | "minutas" | "fgr"
@@ -1356,6 +1360,46 @@ async function fgrFetchLive(){
         if (vs === "SI" || vs === "SÍ") emp.cse[key][mes] = "SI";
         else if (vs === "NO") emp.cse[key][mes] = "NO";
         else if (vs === "N/A") emp.cse[key][mes] = "N/A";
+      });
+    });
+
+    // Trazabilidad mensual (📋 Mensual detallado + tarjeta "Documentos
+    // cargados") (a pedido del usuario, 2026-09-10: "no se visualiza ni la
+    // trazabilidad ni la valorización en el visor"): emp.mensual[mes].residuos
+    // NUNCA se actualizaba con datos reales del Sheet — mismo problema que ya
+    // se corrigió para Seguimiento CSE y % valorización. Solo traía lo
+    // horneado a mano en EMPRESAS, así que cada mes nuevo (ej. Agosto) quedaba
+    // "Sin residuos importados..." hasta que alguien reescribiera este
+    // archivo a mano. Se sobreescribe con lo que traiga payload.trazabilidad
+    // (hoja "📊 Trazabilidad_Docs"), agrupado por Sucursal+Mes, filtrando solo
+    // FGR_ANIO_ACTUAL (la hoja también trae años anteriores, igual que
+    // "Total Residuos") — mismo patrón que CSE/m2Totales arriba.
+    const trazaPorObraMes = {};
+    (payload.trazabilidad || []).forEach(function(r){
+      const suc = String(r.Sucursal || "").trim();
+      const mes = String(r.Mes || "").trim();
+      const anio = String(r["Año"] || "").trim();
+      if (!suc || !mes || (anio && anio !== FGR_ANIO_ACTUAL)) return;
+      const mesNorm = MESES.find(function(m){ return m.toLowerCase() === mes.toLowerCase(); }) || mes;
+      trazaPorObraMes[suc] = trazaPorObraMes[suc] || {};
+      trazaPorObraMes[suc][mesNorm] = trazaPorObraMes[suc][mesNorm] || [];
+      trazaPorObraMes[suc][mesNorm].push({
+        nombre: String(r.Residuo || "").trim(),
+        imp: parseInt(r.Importaciones, 10) || 0,
+        docs: {
+          "Transportista": parseInt(r["Transportista"], 10) || 0,
+          "Disposición final": parseInt(r["Disposición final"], 10) || 0,
+          "Cert. tratamiento": parseInt(r["Cert. tratamiento"], 10) || 0,
+          "Factura": parseInt(r["Factura"], 10) || 0,
+          "Cert. declaración": parseInt(r["Cert. declaración"], 10) || 0
+        }
+      });
+    });
+    Object.keys(trazaPorObraMes).forEach(function(suc){
+      const emp = EMPRESAS.find(function(e){ return e.sucursal === suc; });
+      if (!emp) return;
+      Object.keys(trazaPorObraMes[suc]).forEach(function(mes){
+        emp.mensual[mes] = { residuos: trazaPorObraMes[suc][mes] };
       });
     });
 
