@@ -632,7 +632,14 @@ function dotCSE(v, mes){
 }
 
 // ---------- Seguimiento CSE editable (Correo / Reunión / Terreno) ----------
-const CSE_ACCION_TXT = { correo: "Correo de seguimiento", reunion: "Reunión de seguimiento", terreno: "Visita a terreno" };
+// FIX (2026-09-10, a pedido del usuario: "el seguimiento CSE no funciona
+// tan bien"): estos textos deben coincidir EXACTO con lo que hay en la
+// columna "Acción CSE" del Sheet real (confirmado leyendo la planilla:
+// "Correo seguimiento"/"Reunión seguimiento"/"Visita a terreno", SIN "de")
+// — con "Correo de seguimiento"/"Reunión de seguimiento" (como estaba
+// antes), writeCSE_ nunca encontraba la fila existente al guardar y
+// terminaría creando filas duplicadas en vez de actualizar in-place.
+const CSE_ACCION_TXT = { correo: "Correo seguimiento", reunion: "Reunión seguimiento", terreno: "Visita a terreno" };
 let cseDirtyEmpIds = new Set();
 let cseAutoSaveTimer = null;
 const CSE_AUTOSAVE_DELAY_MS = 1500;
@@ -1264,8 +1271,38 @@ async function fgrFetchLive(){
       const num = parseFloat(v);
       if (!isNaN(num)) emp.m2total = num;
     });
+
+    // Seguimiento CSE (a pedido del usuario, 2026-09-10: "el seguimiento
+    // CSE no funciona tan bien"): emp.cse NUNCA se actualizaba con datos
+    // reales del Sheet — quedaba fijo con los valores horneados a mano en
+    // el arreglo EMPRESAS de este archivo, sin importar lo que hubiera en
+    // "👥 Seguimiento_CSE" ni lo que el usuario editara desde acá (el guardado
+    // ya escribía al Sheet vía writeCSE_, pero la pantalla nunca volvía a
+    // leerlo). Se sobreescribe emp.cse con lo que traiga payload.cse cada
+    // vez que se refresca esta función — mismo patrón que m2Totales arriba.
+    const textoToKey = {};
+    Object.keys(CSE_ACCION_TXT).forEach(function(k){ textoToKey[CSE_ACCION_TXT[k]] = k; });
+    (payload.cse || []).forEach(function(r){
+      const suc = String(r.Sucursal || "").trim();
+      const accionTxt = String(r["Acción CSE"] || r["Accion CSE"] || r["Acción"] || r["Accion"] || "").trim();
+      const key = textoToKey[accionTxt];
+      if (!suc || !key) return;
+      const emp = EMPRESAS.find(function(e){ return e.sucursal === suc; });
+      if (!emp) return;
+      if (!emp.cse[key]) emp.cse[key] = {};
+      MESES.forEach(function(mes){
+        const v = r[mes];
+        if (v === undefined || v === null || v === "") return;
+        const vs = String(v).trim().toUpperCase();
+        if (vs === "SI" || vs === "SÍ") emp.cse[key][mes] = "SI";
+        else if (vs === "NO") emp.cse[key][mes] = "NO";
+        else if (vs === "N/A") emp.cse[key][mes] = "N/A";
+      });
+    });
+
     if (vistaGlobal === "fgr") renderFGRGlobal();
     if (kpiOpen) kpiRenderOverlay();
+    if (vistaActual === "obj" || vistaGlobal === "empresa") renderMain();
   } catch(err){
     console.warn("No se pudo cargar % Avance / Total Residuos en vivo para FGR:", err);
   } finally {
