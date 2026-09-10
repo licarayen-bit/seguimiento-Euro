@@ -244,6 +244,9 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
     <button class="mn-topbtn" type="button" onclick="kpiToggleOverlay()" style="height:34px;">
       📊 Comparar KPIs
     </button>
+    <button class="mn-topbtn" id="syncValBtn" type="button" onclick="sincronizarValorizacion()" style="height:34px;">
+      ♻️ Sincronizar Valorización
+    </button>
     <button class="btn-export" onclick="abrirExport()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Exportar informe
@@ -1804,6 +1807,48 @@ async function m2SaveDirty(){
     mnShowToast("No se pudo guardar los m² totales, reintentando…", true);
     clearTimeout(m2SaveTimer);
     m2SaveTimer = setTimeout(m2SaveDirty, M2_AUTOSAVE_MS * 4);
+  }
+}
+
+// ---------- Sincronizar Valorización (botón manual) ----------
+// A pedido del usuario (2026-09-10: "quiero que se calcule para el sheets
+// de valorización"): empuja emp.val.real/emp.val.acumulado — ya calculados
+// en vivo en fgrFetchLive() desde "Total Residuos" (m³, sin Excavación) —
+// a la hoja "♻️ Valorización", en las filas "% Real"/"% Acumulado" de cada
+// obra. Es un botón manual (no automático en cada carga de página) a
+// propósito: escribe en el Sheet, así que el usuario decide cuándo
+// empujar los números recalculados en vez de que pase solo en segundo
+// plano. Mismo formato de fila que autoSync() en valorizacion-recylink.html
+// para empresas con columna Año (empresa_id, Sucursal, Tipo, Año, 12
+// meses) — writeValorizacion en Code-Euro.gs ya borra/reemplaza por
+// empresa_id+Tipo+Año exacto, así que esto no toca la fila "Meta %"
+// (nunca se manda) ni años distintos a FGR_ANIO_ACTUAL.
+async function sincronizarValorizacion(){
+  const btn = mnEl("syncValBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Sincronizando…"; }
+  try {
+    const filas = [];
+    EMPRESAS.forEach(function(emp){
+      const real = MESES.map(function(m){ const v = emp.val.real[m]; return (v===undefined||v===null) ? "" : v+"%"; });
+      const acumulado = MESES.map(function(m){ const v = emp.val.acumulado[m]; return (v===undefined||v===null) ? "" : v+"%"; });
+      filas.push([emp.id, emp.sucursal, "% Real", FGR_ANIO_ACTUAL].concat(real));
+      filas.push([emp.id, emp.sucursal, "% Acumulado", FGR_ANIO_ACTUAL].concat(acumulado));
+    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(function(){ controller.abort(); }, 15000);
+    const res = await fetch(DATA_SOURCE_URL, {
+      method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: JSON.stringify({ tipo:"valorizacion", filas: filas }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const json = await res.json();
+    if (json.error || json.ok === false) throw new Error(json.error || "Error desconocido");
+    mnShowToast("Valorización sincronizada (" + FGR_ANIO_ACTUAL + ") — % Real y % Acumulado actualizados en el Sheet.");
+  } catch(err){
+    console.error(err);
+    mnShowToast("No se pudo sincronizar Valorización: " + err.message, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "♻️ Sincronizar Valorización"; }
   }
 }
 
