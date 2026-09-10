@@ -1406,6 +1406,15 @@ async function fgrFetchLive(){
     if (vistaGlobal === "fgr") renderFGRGlobal();
     if (kpiOpen) kpiRenderOverlay();
     if (vistaActual === "obj" || vistaGlobal === "empresa") renderMain();
+    // El comparativo de la izquierda (renderSidebar) se pinta UNA vez al
+    // cargar la página (ver bottom del archivo), antes de que esta función
+    // termine de traer los datos en vivo — por eso quedaba con Traz./Valor.
+    // en "—" para todos los meses recién agregados (ej. Agosto) hasta que
+    // el usuario forzaba un re-render manual (cambiando de mes u obra).
+    // Se repinta acá también, igual que renderMain(), una vez que ya hay
+    // datos reales (a pedido del usuario, 2026-09-10: "no se carga el
+    // comparativo de la izquierda").
+    renderSidebar();
   } catch(err){
     console.warn("No se pudo cargar % Avance / Total Residuos en vivo para FGR:", err);
   } finally {
