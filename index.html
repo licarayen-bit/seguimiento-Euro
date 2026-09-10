@@ -1224,20 +1224,51 @@ async function fgrFetchLive(){
     // final, solo para encontrar el primer y último registro. Excavación
     // tampoco cuenta acá (mismo criterio que el resto del cálculo de FGR).
     const registrosPorObra = {};
+    // % de valorización EN VIVO desde "Total Residuos" (a pedido del usuario,
+    // 2026-09-10: "no se calcula el % valorización acumulado a partir de los
+    // m3 de total residuos") — hasta ahora emp.val.real/acumulado quedaban
+    // fijos con los valores horneados a mano en EMPRESAS, igual problema que
+    // ya se corrigió para Seguimiento CSE. Misma fuente y fórmula que ya usa
+    // valorizacion-recylink.html (getAcumReal_/kgRealPorMesSuc_): % = m3
+    // Valorizado / m3 Total, por VOLUMEN (no peso, mismo criterio que
+    // metricaVal ahí para Euro).
+    //
+    // OJO: a diferencia del FGR (que sí excluye Excavación — ver
+    // esExcavacion_ arriba, "mide escombro y similares"), el % de
+    // valorización NO excluye Excavación: kgRealPorMesSuc_ en la app
+    // principal suma TODO residuo tal cual viene de "Total Residuos", así
+    // que se usan mapas de m3 separados (m3ValorizacionTotPorObraMes/
+    // m3ValorizacionValPorObraMes) en vez de reutilizar m3PorObraMes (que sí
+    // excluye Excavación, y habría inflado el % para obras con harta
+    // excavación sin valorizar, como Zañartu).
+    const m3ValorizacionTotPorObraMes = {}, m3ValorizacionValPorObraMes = {};
     (payload.totalResiduos || []).forEach(function(r){
       const suc = String(r.Sucursal || "").trim();
       const mes = String(r.Mes || "").trim();
       if (!suc || !mes) return;
-      if (esExcavacion_(r.Residuo)) return;
       const anio = String(r["Año"] || "").trim();
       const m3 = parseFloat(r["Total M3"]) || 0;
       const co2 = parseFloat(r["Tons. CO2eq. evitadas"]) || 0;
+      const valorizado = String(r["Valorizado/No Valorizado"] || "").trim() === "Valorizado";
       const mesNorm = MESES.find(function(m){ return m.toLowerCase() === mes.toLowerCase(); }) || mes;
       const mesIdx = MESES.indexOf(mesNorm);
       if (anio && mesIdx !== -1){
         registrosPorObra[suc] = registrosPorObra[suc] || [];
         registrosPorObra[suc].push({ anio: anio, mes: mesNorm, orden: parseInt(anio, 10) * 100 + (mesIdx + 1) });
       }
+      // % de valorización: year-to-date dentro de FGR_ANIO_ACTUAL (mismo
+      // criterio que getAcum() en la app principal), sin arrastrar años
+      // anteriores — a diferencia del FGR, que sí acumula desde el inicio
+      // real del proyecto.
+      if (!anio || anio === FGR_ANIO_ACTUAL){
+        m3ValorizacionTotPorObraMes[suc] = m3ValorizacionTotPorObraMes[suc] || {};
+        m3ValorizacionTotPorObraMes[suc][mes] = (m3ValorizacionTotPorObraMes[suc][mes] || 0) + m3;
+        if (valorizado){
+          m3ValorizacionValPorObraMes[suc] = m3ValorizacionValPorObraMes[suc] || {};
+          m3ValorizacionValPorObraMes[suc][mes] = (m3ValorizacionValPorObraMes[suc][mes] || 0) + m3;
+        }
+      }
+      if (esExcavacion_(r.Residuo)) return; // el resto (FGR) sí excluye Excavación
       if (anio && anio !== FGR_ANIO_ACTUAL){
         m3AnioAnteriorPorObra[suc] = (m3AnioAnteriorPorObra[suc] || 0) + m3;
         co2AnioAnteriorPorObra[suc] = (co2AnioAnteriorPorObra[suc] || 0) + co2;
@@ -1247,6 +1278,24 @@ async function fgrFetchLive(){
       co2PorObraMes[suc] = co2PorObraMes[suc] || {};
       m3PorObraMes[suc][mes] = (m3PorObraMes[suc][mes] || 0) + m3;
       co2PorObraMes[suc][mes] = (co2PorObraMes[suc][mes] || 0) + co2;
+    });
+    // % Real (del mes) y % Acumulado (Enero→mes) — solo se sobreescribe el
+    // mes si ese mes (o el acumulado hasta ahí) tiene m3 Total real, para no
+    // pisar con "0%" un mes sin datos todavía.
+    EMPRESAS.forEach(function(emp){
+      const suc = emp.sucursal;
+      const totMap = m3ValorizacionTotPorObraMes[suc] || {};
+      const valMap = m3ValorizacionValPorObraMes[suc] || {};
+      let acumTot = 0, acumVal = 0;
+      MESES.forEach(function(m){
+        const tot = totMap[m];
+        if (tot !== undefined){
+          const val = valMap[m] || 0;
+          emp.val.real[m] = tot>0 ? Math.round(val/tot*1000)/10 : 0;
+          acumTot += tot; acumVal += val;
+        }
+        if (acumTot>0) emp.val.acumulado[m] = Math.round(acumVal/acumTot*1000)/10;
+      });
     });
     ((payload.avance && payload.avance.filas) || []).forEach(function(fila){
       if (String(fila.Tipo || "").trim().toLowerCase() !== "% avance") return;
