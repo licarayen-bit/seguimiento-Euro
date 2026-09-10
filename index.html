@@ -298,7 +298,18 @@ const EMPRESA_NOMBRE  = "Grupo Euro";
 const EMPRESA_COLOR   = "#0F4C81";
 const EMPRESA_COLOR_L = "#EAF2FA";
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-const MESES_ACTIVOS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio"];
+// FIX (2026-09-10, a pedido del usuario: "en agosto no se están mostrando
+// las selecciones"): esto quedó fijo en Julio la última vez que se
+// actualizó este archivo. Como Seguimiento CSE y % de Avance SÍ se cargan
+// en vivo (ver fgrFetchLive), ya tenían dato real de Agosto (confirmado
+// leyendo el Sheet: 27/27 filas de CSE con Agosto cargado) — pero
+// esFuturo("Agosto") daba true al comparar contra este arreglo, así que el
+// visor mostraba "·" (mes futuro) en vez del check/X real. OJO: la
+// trazabilidad mensual/valorización de este archivo siguen siendo datos
+// horneados a mano (no se cargan en vivo) y todavía NO tienen Agosto
+// agregado — esas 2 vistas van a mostrar "sin datos" para Agosto hasta que
+// se actualice el Excel horneado en el arreglo EMPRESAS.
+const MESES_ACTIVOS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto"];
 const META_FGR = 0.2;
 // URL del Apps Script de Euro (Code-Euro.gs). Se usa para las Minutas.
 // NOTA: el doGet/doPost de Code-Euro.gs, tal como está hoy, no tiene
