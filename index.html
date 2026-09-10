@@ -628,19 +628,6 @@ function bdg(v, imp){
   if(v>=imp) return '<span class="badge b-ok">✓ Completo</span>';
   return '<span class="badge b-warn">'+v+'/'+imp+'</span>';
 }
-function cseDot(v){
-  if(v===undefined||v===null||v==="") return '<div class="cse-dot dot-na">·</div>';
-  if(v==="SI") return '<div class="cse-dot dot-ok">✓</div>';
-  if(v==="NO") return '<div class="cse-dot dot-no">✗</div>';
-  if(v==="N/A") return '<div class="cse-dot dot-na">—</div>';
-  return '<div class="cse-dot dot-na" title="'+v+'">…</div>';
-}
-function dotCSE(v, mes){
-  if(esFuturo(mes)) return '<div class="cse-dot dot-fut">·</div>';
-  if(v==="SI") return '<div class="cse-dot dot-ok">✓</div>';
-  if(v==="NO") return '<div class="cse-dot dot-no">✗</div>';
-  return '<div class="cse-dot dot-na">—</div>';
-}
 
 // ---------- Seguimiento CSE editable (Correo / Reunión / Terreno) ----------
 // FIX (2026-09-10, a pedido del usuario: "el seguimiento CSE no funciona
@@ -651,12 +638,27 @@ function dotCSE(v, mes){
 // antes), writeCSE_ nunca encontraba la fila existente al guardar y
 // terminaría creando filas duplicadas en vez de actualizar in-place.
 const CSE_ACCION_TXT = { correo: "Correo seguimiento", reunion: "Reunión seguimiento", terreno: "Visita a terreno" };
+
+// FIX (2026-09-10, a pedido del usuario: "quiero que esa sección sea
+// independiente de la carga de datos de residuos"): esFuturo(mes) decide
+// si un mes está "bloqueado" mirando MESES_ACTIVOS, que solo se actualiza a
+// mano cuando alguien hornea un Excel nuevo de residuos en el arreglo
+// EMPRESAS — Seguimiento CSE se carga en vivo del Sheet (ver fgrFetchLive)
+// y no debería depender de eso para nada. cseEsFuturo() usa la fecha real
+// de hoy en vez de MESES_ACTIVOS, así que el mes en curso queda editable
+// (mostrando "sin dato" si aún no se marca nada) apenas llega, sin esperar
+// a que alguien actualice la parte horneada del archivo.
+function cseEsFuturo(mes){
+  const hoy = new Date();
+  return MESES.indexOf(mes) > hoy.getMonth(); // getMonth() es 0-indexado (Enero=0)
+}
+
 let cseDirtyEmpIds = new Set();
 let cseAutoSaveTimer = null;
 const CSE_AUTOSAVE_DELAY_MS = 1500;
 
 function dotCSEEditable(emp, key, mes){
-  if(esFuturo(mes)) return '<div class="cse-dot dot-fut">·</div>';
+  if(cseEsFuturo(mes)) return '<div class="cse-dot dot-fut">·</div>';
   const v = emp.cse[key][mes];
   const cls = v==="SI" ? "dot-ok" : v==="NO" ? "dot-no" : "dot-na";
   const txt = v==="SI" ? "✓" : v==="NO" ? "✗" : "—";
@@ -902,7 +904,7 @@ function pDocRes(r){
 function renderCSE(emp){
   const keys = [{key:"correo",lbl:"Correo de seguimiento"},{key:"reunion",lbl:"Reunión de seguimiento"},{key:"terreno",lbl:"Visita a terreno"}];
   let ok=0, tot=0;
-  MESES_ACTIVOS.filter(function(m){ return !esFuturo(m); }).forEach(function(m){
+  MESES.filter(function(m){ return !cseEsFuturo(m); }).forEach(function(m){
     keys.forEach(function(k){
       const v = emp.cse[k.key][m];
       if(v===undefined||v===null||v==="") return;
@@ -912,7 +914,7 @@ function renderCSE(emp){
   });
   const pCse = tot===0?0:Math.round(ok/tot*100);
   const thMeses = MESES.map(function(m){
-    return '<th style="text-align:center;padding:4px 6px;font-size:9px;font-weight:700;color:'+(esFuturo(m)?'var(--g300)':m===mesActual?'var(--brand)':'var(--g400)')+';white-space:nowrap;min-width:28px;">'+m.slice(0,3)+'</th>';
+    return '<th style="text-align:center;padding:4px 6px;font-size:9px;font-weight:700;color:'+(cseEsFuturo(m)?'var(--g300)':m===mesActual?'var(--brand)':'var(--g400)')+';white-space:nowrap;min-width:28px;">'+m.slice(0,3)+'</th>';
   }).join("");
 
   return '<div class="cse-section">'
