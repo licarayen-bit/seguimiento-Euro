@@ -782,7 +782,23 @@ function objetivosDe(emp, hastaMes){
     detalle: fgrSinDato ? "Sin dato de FGR registrado — edita el % Avance en la pestaña FGR" : "FGR acumulado a "+hastaMes+": "+fgrData.fgr+" m³/m²",
     sinDato: fgrSinDato
   });
+  // Residuos EN VIVO exigidos por "Valorizar fierro, madera, cartón" (a
+  // pedido del usuario, caso real Don Pepe II: mostraba 0% aunque fierro,
+  // madera y cartón ya se hubieran valorizado) — ver
+  // fgrLive.residuosValorizadosPorObra en fgrFetchLive/procesarPayloadLive_.
+  const RESIDUOS_VALORIZAR_ESPECIFICOS = ["Fierro","Madera","Cartón"];
   emp.objetivosStatic.forEach(o=>{
+    if (o.texto === "Valorizar fierro, madera, cartón" && fgrLive && fgrLive.residuosValorizadosPorObra){
+      const tenidosSet = fgrLive.residuosValorizadosPorObra[emp.sucursal] || new Set();
+      const tenidos = RESIDUOS_VALORIZAR_ESPECIFICOS.filter(function(r){
+        return tenidosSet.has(String(r).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
+      });
+      const faltantes = RESIDUOS_VALORIZAR_ESPECIFICOS.filter(function(r){ return tenidos.indexOf(r)===-1; });
+      const avanceLive = Math.round(tenidos.length/RESIDUOS_VALORIZAR_ESPECIFICOS.length*1000)/10;
+      const detalleLive = (tenidos.length?"✓ "+tenidos.join(", "):"") + (tenidos.length && faltantes.length?" · ":"") + (faltantes.length?"Falta: "+faltantes.join(", "):"");
+      list.push({ texto:o.texto, meta:100, avance:avanceLive, ok: avanceLive>=100, detalle: detalleLive, sinDato:false });
+      return;
+    }
     const sinDato = o.avance===null || o.avance===undefined;
     list.push({
       texto:o.texto, meta:o.meta, avance:o.avance,
@@ -1417,10 +1433,29 @@ function procesarPayloadLive_(payload){
         avancePorObraMes[suc][mes] = pct;
       });
     });
+    // Residuos alguna vez valorizados por obra (a pedido del usuario: "en
+    // Don Pepe II, valorizar fierro madera cartón indica 0% cuando sí se ha
+    // valorizado fierro, madera y cartón") — el objetivo "Valorizar fierro,
+    // madera, cartón" venía de emp.objetivosStatic (horneado a mano, nunca
+    // actualizado), igual problema que ya se corrigió para CSE/trazabilidad/
+    // valorización/FGR. Se arma SIN filtrar por año (a diferencia del resto
+    // de este cálculo): es un hito de la obra ("¿alguna vez se valorizó
+    // este residuo?"), no una métrica mensual/anual.
+    function normResiduoTxt_(s){
+      return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    }
+    const residuosValorizadosPorObra = {};
+    (payload.totalResiduos || []).forEach(function(r){
+      const suc = String(r.Sucursal || "").trim();
+      if (!suc) return;
+      if (String(r["Valorizado/No Valorizado"] || "").trim() !== "Valorizado") return;
+      residuosValorizadosPorObra[suc] = residuosValorizadosPorObra[suc] || new Set();
+      residuosValorizadosPorObra[suc].add(normResiduoTxt_(r.Residuo));
+    });
     fgrLive = {
       m3PorObraMes: m3PorObraMes, co2PorObraMes: co2PorObraMes, avancePorObraMes: avancePorObraMes,
       m3AnioAnteriorPorObra: m3AnioAnteriorPorObra, co2AnioAnteriorPorObra: co2AnioAnteriorPorObra,
-      registrosPorObra: registrosPorObra
+      registrosPorObra: registrosPorObra, residuosValorizadosPorObra: residuosValorizadosPorObra
     };
 
     // m² totales por obra: viven en la fila "m2 totales" de "% de avance"
