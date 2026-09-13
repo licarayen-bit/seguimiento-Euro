@@ -233,6 +233,10 @@ tr.mn-done .mn-cell-textarea{color:var(--g400);}
   <div class="top-right">
     <div class="month-sel">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#667085" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <select id="selAnio" onchange="setAnio(this.value)"><option value="">…</option></select>
+    </div>
+    <div class="month-sel">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#667085" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       <select id="selMes" onchange="setMes(this.value)"></select>
     </div>
     <button class="mn-topbtn" id="mnAccessBtn" type="button" onclick="mnToggleVista()" style="height:34px;">
@@ -566,6 +570,22 @@ const EMPRESAS = [
 }
 ];
 
+// Año elegido en el selector (nuevo, a pedido del usuario: "que el filtro
+// sea año-mes"). Arranca en el año real de hoy; se corrige al año más
+// reciente con datos reales apenas llega el primer fetch en vivo (ver
+// procesarPayloadLive_/listarAniosDisponibles_ en fgrFetchLive). Antes
+// esto era la constante fija FGR_ANIO_ACTUAL="2026" — ver más abajo.
+let anioSeleccionado = String(new Date().getFullYear());
+let ANIOS_DISPONIBLES = [anioSeleccionado];
+
+// MESES_ACTIVOS es el array horneado a mano (solo cubre el año real en
+// curso). Para un año PASADO (ya cerrado) se muestran los 12 meses
+// completos en vez de ese array — no hay "futuro" que bloquear en un año
+// que ya terminó.
+function mesesParaAnio_(anio){
+  return anio === String(new Date().getFullYear()) ? MESES_ACTIVOS : MESES;
+}
+
 // Arranca en el último mes activo (antes quedaba fijo en "Julio" a mano —
 // a pedido del usuario, 2026-09-10: al agregar Agosto a MESES_ACTIVOS, el
 // visor seguía abriendo en Julio por defecto y había que cambiar el
@@ -576,7 +596,15 @@ let vistaActual = "obj";
 let vistaGlobal = "empresa"; // "empresa" | "minutas" | "fgr"
 
 const colorPct = p => p===null?"var(--g300)":p>=80?"#039855":p>=50?"#F79009":"#F04438";
-function esFuturo(mes){ return MESES.indexOf(mes) > MESES.indexOf(MESES_ACTIVOS[MESES_ACTIVOS.length-1]); }
+// FIX (a pedido del usuario, "que el filtro sea año-mes"): esFuturo(mes)
+// bloqueaba meses futuros SIEMPRE contra MESES_ACTIVOS (el año real en
+// curso), aunque se estuviera mirando un año pasado ya cerrado — ningún
+// mes de un año pasado es "futuro". Solo aplica el bloqueo cuando el año
+// elegido es el año real de hoy.
+function esFuturo(mes){
+  if (anioSeleccionado !== String(new Date().getFullYear())) return false;
+  return MESES.indexOf(mes) > MESES.indexOf(MESES_ACTIVOS[MESES_ACTIVOS.length-1]);
+}
 function getEmp(id){ return EMPRESAS.find(e=>e.id===id); }
 function docFrac(v, impTotal){ if(v===null||v===undefined) return null; return [v, impTotal]; }
 function resDelMes(emp, mes){ return (emp.mensual[mes]||{residuos:[]}).residuos; }
@@ -652,7 +680,14 @@ const CSE_ACCION_TXT = { correo: "Correo seguimiento", reunion: "Reunión seguim
 // de hoy en vez de MESES_ACTIVOS, así que el mes en curso queda editable
 // (mostrando "sin dato" si aún no se marca nada) apenas llega, sin esperar
 // a que alguien actualice la parte horneada del archivo.
+// FIX (a pedido del usuario, "que el filtro sea año-mes"): esto comparaba
+// solo el NOMBRE del mes contra hoy.getMonth(), ignorando el año — al
+// mirar un año pasado, meses posteriores al mes calendario actual (ej.
+// Noviembre/Diciembre de 2025, visto en Septiembre de 2026) quedaban mal
+// marcados como "futuro" pese a ya haber pasado hace tiempo.
 function cseEsFuturo(mes){
+  const anioRealActual = String(new Date().getFullYear());
+  if (anioSeleccionado !== anioRealActual) return anioSeleccionado > anioRealActual;
   const hoy = new Date();
   return MESES.indexOf(mes) > hoy.getMonth(); // getMonth() es 0-indexado (Enero=0)
 }
@@ -776,7 +811,7 @@ function renderSidebar(){
     +'<div style="width:28px;height:28px;border-radius:7px;background:'+EMPRESA_COLOR+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">GE</div>'
     +'<div style="flex:1;min-width:0;">'
     +'<div style="font-size:12px;font-weight:700;color:var(--g900);">'+EMPRESA_NOMBRE+'</div>'
-    +'<div style="font-size:10px;color:var(--g400);">'+EMPRESAS.length+' obras · '+mesActual+' 2026</div>'
+    +'<div style="font-size:10px;color:var(--g400);">'+EMPRESAS.length+' obras · '+mesActual+' '+anioSeleccionado+'</div>'
     +'</div>'
     +'<div style="font-size:13px;font-weight:800;color:'+col+';flex-shrink:0;">'+(prom===null?"—":prom+"%")+'</div>'
     +'</div>'
@@ -813,7 +848,7 @@ function renderKPIs(emp){
   const pTrazoAnu = pctTrazHasta(emp, mesActual);
   const pDocMes = pctDocMesEmp(emp, mesActual);
   const vd = emp.val;
-  const mesesHasta = MESES_ACTIVOS.slice(0, MESES_ACTIVOS.indexOf(mesActual)+1);
+  const mesesHasta = mesesParaAnio_(anioSeleccionado).slice(0, mesesParaAnio_(anioSeleccionado).indexOf(mesActual)+1);
   const acumDisponibles = mesesHasta.filter(function(m){ return vd.acumulado[m]!=null; });
   const ultimoAcum = acumDisponibles[acumDisponibles.length-1];
   const pValAnu = ultimoAcum!==undefined ? vd.acumulado[ultimoAcum] : null;
@@ -853,7 +888,7 @@ function renderKPIs(emp){
 function renderObjetivos(emp){
   const list = objetivosDe(emp, mesActual);
   return '<div class="card">'
-    +'<div class="card-header"><div class="card-title">Objetivos 2026</div><div class="card-sub">Enero → '+mesActual+' · '+emp.sucursal+'</div></div>'
+    +'<div class="card-header"><div class="card-title">Objetivos '+anioSeleccionado+'</div><div class="card-sub">Enero → '+mesActual+' · '+emp.sucursal+'</div></div>'
     +'<div class="obj-grid">'
     +list.map(o=>{
       // "Acompañamiento en terreno" y "Valorizar fierro, madera, cartón"
@@ -947,8 +982,8 @@ function renderMensual(emp){
   const fut = esFuturo(mesActual);
   const res = resDelMes(emp, mesActual);
 
-  if(fut) return '<div class="card"><div class="card-header"><div class="card-title">Detalle mensual — '+mesActual+' 2026</div></div><div class="empty">Este mes aún no ha sido evaluado.</div></div>';
-  if(res.length===0) return '<div class="card" style="border-color:var(--g300)"><div class="card-header"><div class="card-title">Detalle mensual — '+mesActual+' 2026</div></div><div class="empty" style="padding:32px">Sin residuos importados en '+mesActual+'.</div></div>';
+  if(fut) return '<div class="card"><div class="card-header"><div class="card-title">Detalle mensual — '+mesActual+' '+anioSeleccionado+'</div></div><div class="empty">Este mes aún no ha sido evaluado.</div></div>';
+  if(res.length===0) return '<div class="card" style="border-color:var(--g300)"><div class="card-header"><div class="card-title">Detalle mensual — '+mesActual+' '+anioSeleccionado+'</div></div><div class="empty" style="padding:32px">Sin residuos importados en '+mesActual+'.</div></div>';
 
   const trazoRows = res.map(function(r){
     return '<tr>'
@@ -1027,7 +1062,7 @@ function pctDocMesEmp(emp, mes){
 }
 function pctDocAnual(emp){
   let ok=0, tot=0;
-  MESES_ACTIVOS.filter(function(m){ return !esFuturo(m); }).forEach(function(m){
+  mesesParaAnio_(anioSeleccionado).filter(function(m){ return !esFuturo(m); }).forEach(function(m){
     resDelMes(emp,m).forEach(function(r){
       DOCS_DOC_COLS.forEach(function(doc){ const f=docFrac(r.docs[doc], r.imp); if(!f) return; tot+=f[1]; ok+=f[0]; });
     });
@@ -1036,7 +1071,7 @@ function pctDocAnual(emp){
 }
 
 function renderAnual(emp){
-  const meses = MESES_ACTIVOS;
+  const meses = mesesParaAnio_(anioSeleccionado);
   const pTrazo = pctTrazHasta(emp, mesActual) ?? 0;
   const pDocs = pctDocAnual(emp);
   const thMes = meses.map(function(m){ return '<th style="'+(m===mesActual?'color:var(--brand);font-weight:800':'')+'">'+m+'</th>'; }).join("");
@@ -1132,7 +1167,7 @@ function renderValorizacion(emp){
 
   return '<div class="kpi-row" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px;">'
     +'<div class="kpi"><div class="kpi-lbl">Valorización '+mesActual+'</div><div class="kpi-val" style="color:'+cV(pAct,mAct)+'">'+(pAct===null?"—":pAct+"%")+'</div><div class="kpi-desc">Meta: '+mAct+'%</div></div>'
-    +'<div class="kpi"><div class="kpi-lbl">Acumulado 2026</div><div class="kpi-val" style="color:'+cV(prom,5)+'">'+(prom===null?"—":prom+"%")+'</div><div class="kpi-desc">'+(ultimoAcum===undefined?"Sin dato real aún":ultimoAcum==="Enero"?"Enero":"Enero a "+ultimoAcum)+'</div></div>'
+    +'<div class="kpi"><div class="kpi-lbl">Acumulado '+anioSeleccionado+'</div><div class="kpi-val" style="color:'+cV(prom,5)+'">'+(prom===null?"—":prom+"%")+'</div><div class="kpi-desc">'+(ultimoAcum===undefined?"Sin dato real aún":ultimoAcum==="Enero"?"Enero":"Enero a "+ultimoAcum)+'</div></div>'
     +'<div class="kpi" style="background:var(--g50);"><div class="kpi-lbl" style="color:var(--g400);">Promedio simple</div><div class="kpi-val" style="color:var(--g500);font-size:20px;">'+(promedioSimple===null?"—":promedioSimple+"%")+'</div><div class="kpi-desc">Enero a '+mesActual+' · '+pasados.length+' meses</div></div>'
     +'<div class="kpi"><div class="kpi-lbl">Mejor mes</div><div class="kpi-val" style="color:#039855">'+(mejor===null?"—":mejor+"%")+'</div><div class="kpi-desc">'+(mejorM||"—")+'</div></div>'
     +'<div class="kpi"><div class="kpi-lbl">Tendencia</div><div class="kpi-val" style="color:'+(tend===null?"var(--g400)":tend>0?"#039855":tend<0?"#F04438":"var(--g400)")+'">'+(tend===null?"—":tend>0?"↑ +"+tend+"%":tend<0?"↓ "+tend+"%":"→ igual")+'</div><div class="kpi-desc">último vs anterior</div></div>'
@@ -1188,7 +1223,7 @@ function renderValorizacion(emp){
 // real ya cargado, si existe.
 let fgrLive = null; // { m3PorObraMes:{suc:{mes:m3}}, co2PorObraMes:{suc:{mes:co2}}, avancePorObraMes:{suc:{mes:pct}}, m3AnioAnteriorPorObra:{suc:m3}, co2AnioAnteriorPorObra:{suc:co2} }
 let fgrLiveLoading = false;
-const FGR_ANIO_ACTUAL = "2026"; // año que cubre MESES_ACTIVOS
+let fgrLivePayloadCache = null; // payload crudo del último fetch — permite recalcular al cambiar de año (setAnio) sin volver a pedirle datos al Apps Script.
 const FGR_AVANCE_AUTOSAVE_MS = 1500;
 let fgrAvanceDirty = {}; // { "sucursal|mes": pct }
 let fgrAvanceSaveTimer = null;
@@ -1201,14 +1236,62 @@ function fgrMesKeyLookup(obj, mes){
   return k !== undefined ? obj[k] : undefined;
 }
 
+// Escanea la columna "Año" de Total Residuos/Trazabilidad_Docs/% de avance
+// y devuelve la lista de años con datos, ordenada ascendente (mismo
+// mecanismo que listarAniosDisponibles_ en Code-Vital.gs/Code-Gespania.gs).
+function listarAniosDisponiblesLive_(payload){
+  const anios = {};
+  (payload.totalResiduos || []).forEach(function(r){ const a = String(r["Año"] || "").trim(); if (a) anios[a] = true; });
+  (payload.trazabilidad || []).forEach(function(r){ const a = String(r["Año"] || "").trim(); if (a) anios[a] = true; });
+  ((payload.avance && payload.avance.filas) || []).forEach(function(r){ const a = String(r["Año"] || "").trim(); if (a) anios[a] = true; });
+  const lista = Object.keys(anios).sort();
+  return lista.length ? lista : [String(new Date().getFullYear())];
+}
+
 async function fgrFetchLive(){
   if (fgrLiveLoading) return;
   fgrLiveLoading = true;
   try {
     const res = await fetch(DATA_SOURCE_URL + "?_=" + Date.now());
     const payload = await res.json();
+    fgrLivePayloadCache = payload;
+    procesarPayloadLive_(payload);
+  } catch(err){
+    console.warn("No se pudo cargar % Avance / Total Residuos en vivo para FGR:", err);
+  } finally {
+    fgrLiveLoading = false;
+    if (vistaActual === "fgr" || vistaActual === "obj") renderMain();
+  }
+}
+
+// Cambiar de año NO vuelve a pedir datos al Apps Script — el payload ya
+// trae todos los años en una sola llamada (confirmado leyendo Total
+// Residuos/Trazabilidad_Docs/% de avance, todas con columna Año) — solo se
+// recalcula en el navegador con el mismo payload cacheado.
+function setAnio(a){
+  if (!a || a === anioSeleccionado || !fgrLivePayloadCache) return;
+  anioSeleccionado = a;
+  const mesesDelAnio = mesesParaAnio_(anioSeleccionado);
+  if (!mesesDelAnio.includes(mesActual)) mesActual = mesesDelAnio[mesesDelAnio.length - 1];
+  procesarPayloadLive_(fgrLivePayloadCache);
+  initSelectorMeses();
+  renderSidebar();
+  renderMain();
+}
+
+function actualizarSelectorAnios_(){
+  const sel = mnEl("selAnio");
+  if (!sel || !ANIOS_DISPONIBLES.length) return;
+  sel.innerHTML = ANIOS_DISPONIBLES.map(function(a){ return '<option value="'+a+'" '+(a===anioSeleccionado?'selected':'')+'>'+a+'</option>'; }).join("");
+}
+
+function procesarPayloadLive_(payload){
+  {
+    ANIOS_DISPONIBLES = listarAniosDisponiblesLive_(payload);
+    if (ANIOS_DISPONIBLES.indexOf(anioSeleccionado) === -1) anioSeleccionado = ANIOS_DISPONIBLES[ANIOS_DISPONIBLES.length - 1];
+    actualizarSelectorAnios_();
     const m3PorObraMes = {}, co2PorObraMes = {}, avancePorObraMes = {};
-    // Años anteriores a FGR_ANIO_ACTUAL se acumulan aparte, por obra, sin
+    // Años anteriores a anioSeleccionado se acumulan aparte, por obra, sin
     // desglose por mes: FGR/CO2ev·m² son un acumulado desde el inicio real
     // del proyecto (pudo empezar en 2025 o antes), no solo año calendario.
     const m3AnioAnteriorPorObra = {}, co2AnioAnteriorPorObra = {}, m3ValAnioAnteriorPorObra = {};
@@ -1260,10 +1343,18 @@ async function fgrFetchLive(){
         registrosPorObra[suc] = registrosPorObra[suc] || [];
         registrosPorObra[suc].push({ anio: anio, mes: mesNorm, orden: parseInt(anio, 10) * 100 + (mesIdx + 1) });
       }
-      if (anio && anio !== FGR_ANIO_ACTUAL){
-        m3AnioAnteriorPorObra[suc] = (m3AnioAnteriorPorObra[suc] || 0) + m3;
-        co2AnioAnteriorPorObra[suc] = (co2AnioAnteriorPorObra[suc] || 0) + co2;
-        if (valorizado) m3ValAnioAnteriorPorObra[suc] = (m3ValAnioAnteriorPorObra[suc] || 0) + m3;
+      if (anio && anio !== anioSeleccionado){
+        // Años ANTERIORES al seleccionado se acumulan aparte (base del
+        // acumulado "desde el inicio real del proyecto"). Años POSTERIORES
+        // se ignoran del todo — no forman parte de la historia "hasta" el
+        // año que se está mirando (a pedido del usuario, "que el filtro sea
+        // año-mes": antes esto comparaba con !== contra un año fijo, así que
+        // un año posterior también cabía en el balde "anterior" por error).
+        if (Number(anio) < Number(anioSeleccionado)) {
+          m3AnioAnteriorPorObra[suc] = (m3AnioAnteriorPorObra[suc] || 0) + m3;
+          co2AnioAnteriorPorObra[suc] = (co2AnioAnteriorPorObra[suc] || 0) + co2;
+          if (valorizado) m3ValAnioAnteriorPorObra[suc] = (m3ValAnioAnteriorPorObra[suc] || 0) + m3;
+        }
         return;
       }
       m3PorObraMes[suc] = m3PorObraMes[suc] || {};
@@ -1286,6 +1377,12 @@ async function fgrFetchLive(){
       const suc = emp.sucursal;
       const totMap = m3PorObraMes[suc] || {};
       const valMap = m3ValPorObraMes[suc] || {};
+      // Igual que emp.mensual arriba: emp.val.real/acumulado están indexados
+      // solo por nombre de mes (sin año) — se limpian antes de recalcular
+      // para que un mes sin dato en el año elegido no arrastre el valor de
+      // otro año (a pedido del usuario, "que el filtro sea año-mes").
+      emp.val.real = {};
+      emp.val.acumulado = {};
       let acumTot = m3AnioAnteriorPorObra[suc] || 0;
       let acumVal = m3ValAnioAnteriorPorObra[suc] || 0;
       MESES.forEach(function(m){
@@ -1302,8 +1399,15 @@ async function fgrFetchLive(){
       if (String(fila.Tipo || "").trim().toLowerCase() !== "% avance") return;
       const suc = String(fila.Sucursal || "").trim();
       if (!suc) return;
+      // FIX (a pedido del usuario, "que el filtro sea año-mes"): antes esto
+      // no filtraba por Año en absoluto — si existían filas "% Avance" de
+      // más de un año para la misma obra, se mezclaban en el mismo balde
+      // por nombre de mes (Enero de 2025 se pisaba con Enero de 2026, según
+      // el orden de las filas). Ahora solo se usa la fila del año elegido.
+      const filaAnio = String(fila["Año"] || "").trim();
+      if (filaAnio && filaAnio !== anioSeleccionado) return;
       avancePorObraMes[suc] = avancePorObraMes[suc] || {};
-      MESES_ACTIVOS.forEach(function(mes){
+      mesesParaAnio_(anioSeleccionado).forEach(function(mes){
         const v = fgrMesKeyLookup(fila, mes);
         if (v === undefined || v === "") return;
         let pct = parseFloat(v);
@@ -1372,14 +1476,21 @@ async function fgrFetchLive(){
     // "Sin residuos importados..." hasta que alguien reescribiera este
     // archivo a mano. Se sobreescribe con lo que traiga payload.trazabilidad
     // (hoja "📊 Trazabilidad_Docs"), agrupado por Sucursal+Mes, filtrando solo
-    // FGR_ANIO_ACTUAL (la hoja también trae años anteriores, igual que
+    // el año seleccionado (la hoja también trae otros años, igual que
     // "Total Residuos") — mismo patrón que CSE/m2Totales arriba.
+    //
+    // FIX (a pedido del usuario, "que el filtro sea año-mes"): emp.mensual
+    // está indexado SOLO por nombre de mes (sin año) — al cambiar de año se
+    // limpia primero por completo, si no, un mes que solo tenía datos en el
+    // año anterior se quedaba pegado mostrando esos datos aunque se
+    // estuviera mirando otro año.
+    EMPRESAS.forEach(function(emp){ emp.mensual = {}; });
     const trazaPorObraMes = {};
     (payload.trazabilidad || []).forEach(function(r){
       const suc = String(r.Sucursal || "").trim();
       const mes = String(r.Mes || "").trim();
       const anio = String(r["Año"] || "").trim();
-      if (!suc || !mes || (anio && anio !== FGR_ANIO_ACTUAL)) return;
+      if (!suc || !mes || (anio && anio !== anioSeleccionado)) return;
       const mesNorm = MESES.find(function(m){ return m.toLowerCase() === mes.toLowerCase(); }) || mes;
       trazaPorObraMes[suc] = trazaPorObraMes[suc] || {};
       trazaPorObraMes[suc][mesNorm] = trazaPorObraMes[suc][mesNorm] || [];
@@ -1415,11 +1526,6 @@ async function fgrFetchLive(){
     // datos reales (a pedido del usuario, 2026-09-10: "no se carga el
     // comparativo de la izquierda").
     renderSidebar();
-  } catch(err){
-    console.warn("No se pudo cargar % Avance / Total Residuos en vivo para FGR:", err);
-  } finally {
-    fgrLiveLoading = false;
-    if (vistaActual === "fgr" || vistaActual === "obj") renderMain();
   }
 }
 
@@ -1464,13 +1570,14 @@ function fgrCalcMes(emp, mes){
   let m3Acum = fgrLive.m3AnioAnteriorPorObra[emp.sucursal] || 0;
   let co2Acum = fgrLive.co2AnioAnteriorPorObra[emp.sucursal] || 0;
   let primerMesIdx = null;
-  MESES_ACTIVOS.forEach(function(mi, i){
+  mesesParaAnio_(anioSeleccionado).forEach(function(mi, i){
     if (primerMesIdx !== null) return;
     if (fgrMesKeyLookup(m3Map, mi) !== undefined || fgrMesKeyLookup(co2Map, mi) !== undefined) primerMesIdx = i;
   });
   let faltaAlgunMes = false;
-  for (let i = 0; i <= MESES_ACTIVOS.indexOf(mes); i++){
-    const mi = MESES_ACTIVOS[i];
+  const mesesDelAnioFgr_ = mesesParaAnio_(anioSeleccionado);
+  for (let i = 0; i <= mesesDelAnioFgr_.indexOf(mes); i++){
+    const mi = mesesDelAnioFgr_[i];
     const vm3 = fgrMesKeyLookup(m3Map, mi);
     const vco2 = fgrMesKeyLookup(co2Map, mi);
     if (vm3 === undefined || vco2 === undefined) {
@@ -1534,7 +1641,7 @@ async function fgrSaveAvanceDirty(){
       const pct = porSucursal[suc][mes];
       valoresFraccion[mes] = (pct === null || pct === undefined) ? "" : pct / 100;
     });
-    return { empresa_id: emp ? emp.id : "", Sucursal: suc, Tipo: "% Avance", "Año": "2026", valores: valoresFraccion };
+    return { empresa_id: emp ? emp.id : "", Sucursal: suc, Tipo: "% Avance", "Año": anioSeleccionado, valores: valoresFraccion };
   });
   try {
     const controller = new AbortController();
@@ -1587,7 +1694,7 @@ const M2_AUTOSAVE_MS = 1500;
 function ultimoAvance_(sucursal){
   if (!fgrLive) return null;
   const map = fgrLive.avancePorObraMes[sucursal] || {};
-  const mesesConDato = MESES_ACTIVOS.filter(function(m){ return fgrMesKeyLookup(map, m) !== undefined; });
+  const mesesConDato = mesesParaAnio_(anioSeleccionado).filter(function(m){ return fgrMesKeyLookup(map, m) !== undefined; });
   if (!mesesConDato.length) return null;
   const mes = mesesConDato[mesesConDato.length-1];
   return { pct: fgrMesKeyLookup(map, mes), mes: mes };
@@ -1881,12 +1988,12 @@ function kpiPctTxt(p){
 }
 function kpiRenderOverlay(){
   const sub = mnEl("kpiOverlaySub");
-  if (sub) sub.textContent = mesActual + " 2026 · " + EMPRESAS.length + " obras";
+  if (sub) sub.textContent = mesActual + " " + anioSeleccionado + " · " + EMPRESAS.length + " obras";
   const body = mnEl("kpiOverlayBody");
   if (!body) return;
   const filas = EMPRESAS.map(function(emp){
     const pTrazoAnu = pctTrazHasta(emp, mesActual);
-    const mesesHasta = MESES_ACTIVOS.slice(0, MESES_ACTIVOS.indexOf(mesActual)+1);
+    const mesesHasta = mesesParaAnio_(anioSeleccionado).slice(0, mesesParaAnio_(anioSeleccionado).indexOf(mesActual)+1);
     const acumDisponibles = mesesHasta.filter(function(m){ return emp.val.acumulado[m]!=null; });
     const ultimoAcum = acumDisponibles[acumDisponibles.length-1];
     const pValAnu = ultimoAcum!==undefined ? emp.val.acumulado[ultimoAcum] : null;
@@ -1940,7 +2047,7 @@ function kpiRenderOverlay(){
 
 function renderFGR(emp){
   const m2 = emp.m2total;
-  const meses = MESES_ACTIVOS.filter(function(m){ return emp.fgr[m] || (fgrLive && fgrMesKeyLookup((fgrLive.avancePorObraMes[emp.sucursal]||{}), m) !== undefined); });
+  const meses = mesesParaAnio_(anioSeleccionado).filter(function(m){ return emp.fgr[m] || (fgrLive && fgrMesKeyLookup((fgrLive.avancePorObraMes[emp.sucursal]||{}), m) !== undefined); });
   let html = '<div class="card">'
     +'<div class="card-header"><div class="card-title">FGR · Ton CO2 evitadas/m²</div>'
     +'<div class="card-sub" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
@@ -2596,7 +2703,7 @@ window.addEventListener("beforeunload", function(e){
 function abrirExport(){
   const emp = getEmp(empActual);
   const sub = document.getElementById("exportSubtitle");
-  if(sub && emp) sub.textContent = emp.sucursal + " · " + mesActual + " 2026";
+  if(sub && emp) sub.textContent = emp.sucursal + " · " + mesActual + " " + anioSeleccionado;
   document.getElementById("exportOverlay").classList.add("open");
 }
 function cerrarExport(){ document.getElementById("exportOverlay").classList.remove("open"); }
@@ -2610,14 +2717,14 @@ function renderPrintHeader(emp){
     +'<div style="font-size:15px;font-weight:700;color:var(--brand);">Recylink · Portal de Trazabilidad</div>'
     +'<div class="print-header-info">'
     +'<div style="font-size:13px;font-weight:700;color:#101828;">'+EMPRESA_NOMBRE+' · '+emp.sucursal+'</div>'
-    +'<div>Informe de Trazabilidad · '+mesActual+' 2026</div>'
+    +'<div>Informe de Trazabilidad · '+mesActual+' '+anioSeleccionado+'</div>'
     +'<div>Generado el '+fecha+'</div>'
     +'</div></div>';
 }
 
 function initSelectorMeses(){
   const sel = document.getElementById("selMes");
-  sel.innerHTML = MESES_ACTIVOS.map(function(m){ return '<option value="'+m+'" '+(m===mesActual?'selected':'')+'>'+m+' 2026</option>'; }).join("");
+  sel.innerHTML = mesesParaAnio_(anioSeleccionado).map(function(m){ return '<option value="'+m+'" '+(m===mesActual?'selected':'')+'>'+m+'</option>'; }).join("");
 }
 initSelectorMeses();
 renderSidebar();
