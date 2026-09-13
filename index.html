@@ -817,27 +817,23 @@ function renderSidebar(){
     +'</div>'
     +'<div class="prog-bg"><div class="prog-fill" style="width:'+(prom??0)+'%;background:'+col+';"></div></div>'
     +'</div>'
-    +'<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:0;padding:6px 14px 4px;border-bottom:1px solid var(--bd);background:var(--g50);">'
+    +'<div style="display:grid;grid-template-columns:1fr auto auto;gap:0;padding:6px 14px 4px;border-bottom:1px solid var(--bd);background:var(--g50);">'
     +'<span style="font-size:9px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;">Obra</span>'
     +'<span style="font-size:9px;font-weight:700;color:var(--brand);text-transform:uppercase;letter-spacing:.5px;text-align:center;min-width:38px;">Traz.</span>'
     +'<span style="font-size:9px;font-weight:700;color:#0F8A5F;text-transform:uppercase;letter-spacing:.5px;text-align:center;min-width:40px;">Valor.</span>'
-    +'<span style="font-size:9px;font-weight:700;color:var(--ok);text-transform:uppercase;letter-spacing:.5px;text-align:center;min-width:40px;">Obj.</span>'
     +'</div>';
 
   html += EMPRESAS.map(emp=>{
     const act = emp.id===empActual;
     const trz = pctTrazMes(emp, mesActual);
     const tCol = trz===null ? 'var(--g300)' : (trz>=100?'var(--ok)':'var(--err)');
+    const tSimbolo = trz===null ? '—' : (trz>=100?'✓':'✗');
     const valAc = emp.val.acumulado[mesActual];
     const valColor = (valAc===undefined||valAc===null) ? 'var(--g300)' : (valAc>=5?'#039855':(valAc>=2.5?'#F79009':'#F04438'));
-    const objs = objetivosDe(emp, mesActual).filter(o=>!o.sinDato);
-    const objOk = objs.filter(o=>o.ok).length;
-    const objCol = objs.length===0?'var(--g300)':objOk>=objs.length?'var(--ok)':objOk>=objs.length*.5?'var(--warn)':'var(--err)';
     return '<div class="sb-suc '+(act?'active':'')+'" onclick="setEmp(\''+emp.id+'\')">'
       +'<div style="font-size:11px;font-weight:'+(act?700:500)+';color:'+(act?EMPRESA_COLOR:'var(--g700)')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+emp.sucursal+'</div>'
-      +'<div style="text-align:center;min-width:38px;font-size:11px;font-weight:700;color:'+tCol+';">'+(trz===null?"—":trz+"%")+'</div>'
+      +'<div style="text-align:center;min-width:38px;font-size:13px;font-weight:700;color:'+tCol+';">'+tSimbolo+'</div>'
       +'<div style="text-align:center;min-width:40px;font-size:11px;font-weight:700;color:'+valColor+';">'+((valAc===undefined||valAc===null)?"—":valAc+"%")+'</div>'
-      +'<div style="text-align:center;min-width:40px;font-size:11px;font-weight:700;color:'+objCol+';">'+objOk+'/'+objs.length+'</div>'
       +'</div>';
   }).join("");
 
