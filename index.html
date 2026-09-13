@@ -2727,6 +2727,14 @@ function initSelectorMeses(){
   sel.innerHTML = mesesParaAnio_(anioSeleccionado).map(function(m){ return '<option value="'+m+'" '+(m===mesActual?'selected':'')+'>'+m+'</option>'; }).join("");
 }
 initSelectorMeses();
+// Puebla el selector de Año con el año real de hoy ANTES de que la carga
+// en vivo (fgrFetchLive) termine — a diferencia del selector de Mes, este
+// solo se rellenaba dentro de procesarPayloadLive_(), así que si esa
+// carga fallaba (red, cuota de Apps Script, etc.) el selector de Año se
+// quedaba pegado en el placeholder "…" para siempre (a pedido del
+// usuario: "no me muestra años, solo meses"). ANIOS_DISPONIBLES ya
+// arranca con [anioSeleccionado] (el año real de hoy) como fallback.
+actualizarSelectorAnios_();
 renderSidebar();
 renderMain();
 </script>
