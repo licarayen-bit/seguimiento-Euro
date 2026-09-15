@@ -792,15 +792,15 @@ function objetivosDe(emp, hastaMes){
 // tocar EMPRESAS), en vez de tener que borrarla a mano del código — lo que
 // además nunca funcionaría para una obra auto-descubierta desde el Sheet
 // (ver procesarPayloadLive_), ya que volvería a aparecer sola en la
-// siguiente carga. Guardado en localStorage, por navegador.
-var OBRAS_CERRADAS_KEY = 'seguimientoEuro_obrasCerradas';
-function getObrasCerradas_() {
-  try { var raw = localStorage.getItem(OBRAS_CERRADAS_KEY); return raw ? JSON.parse(raw) : []; } catch(e) { return []; }
-}
-function setObrasCerradas_(arr) {
-  try { localStorage.setItem(OBRAS_CERRADAS_KEY, JSON.stringify(arr)); } catch(e) {}
-}
-function esObraCerrada_(suc) { return getObrasCerradas_().indexOf(suc) >= 0; }
+// siguiente carga. Se guarda en la hoja "⚙️ Obras Cerradas" (no en
+// localStorage): así no se pierde si el navegador borra datos del sitio
+// (mismo problema real ya visto en esta sesión con "objetivos dormidos"
+// del visor principal), y queda compartido entre quien sea que abra el
+// visor, no solo en este navegador. obrasCerradasCache se llena desde
+// payload.obrasCerradas en procesarPayloadLive_.
+var obrasCerradasCache = [];
+function getObrasCerradas_() { return obrasCerradasCache; }
+function esObraCerrada_(suc) { return obrasCerradasCache.indexOf(suc) >= 0; }
 
 function abrirGestionObrasCerradas_() {
   var cerradas = getObrasCerradas_();
@@ -836,7 +836,12 @@ function guardarObrasCerradas_() {
   document.querySelectorAll('#obrasCerradasList input[type=checkbox]:checked').forEach(function(inp){
     checked.push(inp.getAttribute('data-suc'));
   });
-  setObrasCerradas_(checked);
+  obrasCerradasCache = checked; // refleja el cambio de inmediato, sin esperar la red
+  fetch(DATA_SOURCE_URL, {
+    method: 'POST', mode: 'no-cors',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({tipo:'obrasCerradas', sucursales: checked})
+  }).catch(function(){});
   cerrarGestionObrasCerradas_();
   var actual = getEmp(empActual);
   if (actual && esObraCerrada_(actual.sucursal)) {
@@ -1350,6 +1355,11 @@ function procesarPayloadLive_(payload){
     ANIOS_DISPONIBLES = listarAniosDisponiblesLive_(payload);
     if (ANIOS_DISPONIBLES.indexOf(anioSeleccionado) === -1) anioSeleccionado = ANIOS_DISPONIBLES[ANIOS_DISPONIBLES.length - 1];
     actualizarSelectorAnios_();
+    // Obras cerradas: se lee de la hoja "⚙️ Obras Cerradas" (ver
+    // getObrasCerradas_/writeObrasCerradas_ en Code-Euro.gs), no de
+    // localStorage — así se comparte entre navegadores y no se pierde si
+    // alguno borra datos del sitio.
+    obrasCerradasCache = payload.obrasCerradas || [];
     // Auto-descubrir obras nuevas que existan en el Sheet real pero no en el
     // EMPRESAS hardcodeado de este visor (a pedido del usuario, 2026-09-15,
     // caso real: "Obispo Orrego" e "Irarrázabal 2325" no aparecían pese a
