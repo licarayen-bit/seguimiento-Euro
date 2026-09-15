@@ -2241,9 +2241,26 @@ function renderCostoPresupuesto(emp){
     matriz[key][res] = (matriz[key][res]||0) + (parseFloat(r.Costo)||0);
   });
 
+  // Evolución del % acumulado vs. presupuesto, mes a mes (a pedido del
+  // usuario, 2026-09-15) — corre en paralelo a la tabla, sumando Residuos y
+  // Excavación por separado a medida que se recorren los meses en orden
+  // cronológico (no es el total final, es el acumulado HASTA ese mes).
+  let acumResiduosRun = 0, acumExcavacionRun = 0;
+  const filasConAcum = mesesOrdenados.map(function(mo){
+    const key = mo.anio+"-"+String(MESES.indexOf(mo.mes)+1).padStart(2,"0");
+    const fila = matriz[key] || {};
+    residuosOrdenados.forEach(function(res){
+      const v = fila[res] || 0;
+      if (esExcavacionTxt_(res)) acumExcavacionRun += v; else acumResiduosRun += v;
+    });
+    const pctResAcum = presupuestoResiduos>0 ? Math.round(acumResiduosRun/presupuestoResiduos*1000)/10 : null;
+    const pctExcAcum = presupuestoExcavacion>0 ? Math.round(acumExcavacionRun/presupuestoExcavacion*1000)/10 : null;
+    return {mo:mo, fila:fila, pctResAcum:pctResAcum, pctExcAcum:pctExcAcum};
+  });
+
   const tabla = '<div class="card"><div class="card-header"><div>'
     +'<div class="card-title">Evolución mensual por residuo · '+emp.sucursal+'</div>'
-    +'<div class="card-sub">Costo por residuo, mes a mes (todos los años con datos)</div>'
+    +'<div class="card-sub">Costo por residuo, mes a mes (todos los años con datos) · % = acumulado vs. presupuesto hasta ese mes</div>'
     +'</div></div>'
     +'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
     +'<thead><tr style="background:var(--g50);">'
@@ -2252,10 +2269,11 @@ function renderCostoPresupuesto(emp){
       return '<th style="padding:8px 12px;font-size:10px;font-weight:700;color:'+(esExcavacionTxt_(res)?"#B54708":"var(--tx2)")+';text-align:right;border-bottom:1px solid var(--bd);white-space:nowrap;">'+res+'</th>';
     }).join("")
     +'<th style="padding:8px 12px;font-size:10px;font-weight:700;color:var(--brand);text-align:right;border-bottom:1px solid var(--bd);white-space:nowrap;">TOTAL MES</th>'
+    +'<th style="padding:8px 12px;font-size:10px;font-weight:700;color:var(--tx2);text-align:right;border-bottom:1px solid var(--bd);white-space:nowrap;">% RESIDUOS ACUM.</th>'
+    +'<th style="padding:8px 12px;font-size:10px;font-weight:700;color:#B54708;text-align:right;border-bottom:1px solid var(--bd);white-space:nowrap;">% EXCAVACIÓN ACUM.</th>'
     +'</tr></thead><tbody>'
-    +mesesOrdenados.map(function(mo, i){
-      const key = mo.anio+"-"+String(MESES.indexOf(mo.mes)+1).padStart(2,"0");
-      const fila = matriz[key] || {};
+    +filasConAcum.map(function(fc, i){
+      const mo = fc.mo, fila = fc.fila;
       const totalMes = residuosOrdenados.reduce(function(s,res){ return s+(fila[res]||0); },0);
       const bg = i%2 ? "background:var(--g25);" : "background:#fff;";
       return "<tr>"
@@ -2265,6 +2283,8 @@ function renderCostoPresupuesto(emp){
           return "<td style='padding:8px 12px;text-align:right;font-size:12px;color:"+(v?"var(--g700)":"var(--g300)")+";"+bg+"'>"+(v?fmtMoney_(v):"—")+"</td>";
         }).join("")
         +"<td style='padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:var(--brand);"+bg+"'>"+fmtMoney_(totalMes)+"</td>"
+        +"<td style='padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:"+colInv_(fc.pctResAcum)+";"+bg+"'>"+(fc.pctResAcum===null?"—":fc.pctResAcum+"%")+"</td>"
+        +"<td style='padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:"+colInv_(fc.pctExcAcum)+";"+bg+"'>"+(fc.pctExcAcum===null?"—":fc.pctExcAcum+"%")+"</td>"
         +"</tr>";
     }).join("")
     +'<tr style="border-top:2px solid var(--bd);background:var(--g50);">'
@@ -2273,6 +2293,8 @@ function renderCostoPresupuesto(emp){
       return '<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:var(--g700);">'+fmtMoney_(costoPorResiduo[res])+'</td>';
     }).join("")
     +'<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:var(--brand);">'+fmtMoney_(costoTotalResiduos+costoTotalExcavacion)+'</td>'
+    +'<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:'+colInv_(pctResiduos)+';">'+(pctResiduos===null?"—":pctResiduos+"%")+'</td>'
+    +'<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:'+colInv_(pctExcavacion)+';">'+(pctExcavacion===null?"—":pctExcavacion+"%")+'</td>'
     +'</tr>'
     +'</tbody></table></div></div>';
 
