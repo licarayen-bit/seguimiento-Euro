@@ -786,6 +786,67 @@ function objetivosDe(emp, hastaMes){
   return list;
 }
 
+// Obras cerradas (a pedido del usuario, 2026-09-15): mismo mecanismo que
+// "🏢 Sucursales cerradas" del visor principal — una obra marcada como
+// cerrada deja de mostrarse en el sidebar (sin perder su historial ni
+// tocar EMPRESAS), en vez de tener que borrarla a mano del código — lo que
+// además nunca funcionaría para una obra auto-descubierta desde el Sheet
+// (ver procesarPayloadLive_), ya que volvería a aparecer sola en la
+// siguiente carga. Guardado en localStorage, por navegador.
+var OBRAS_CERRADAS_KEY = 'seguimientoEuro_obrasCerradas';
+function getObrasCerradas_() {
+  try { var raw = localStorage.getItem(OBRAS_CERRADAS_KEY); return raw ? JSON.parse(raw) : []; } catch(e) { return []; }
+}
+function setObrasCerradas_(arr) {
+  try { localStorage.setItem(OBRAS_CERRADAS_KEY, JSON.stringify(arr)); } catch(e) {}
+}
+function esObraCerrada_(suc) { return getObrasCerradas_().indexOf(suc) >= 0; }
+
+function abrirGestionObrasCerradas_() {
+  var cerradas = getObrasCerradas_();
+  var todasObras = EMPRESAS.map(function(e){ return e.sucursal; }).sort();
+  var html = '<div id="obrasCerradasOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;" onclick="if(event.target===this) cerrarGestionObrasCerradas_()">'
+    + '<div style="background:#fff;border-radius:10px;max-width:420px;width:90%;max-height:80vh;overflow-y:auto;padding:18px;">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">'
+    + '<div style="font-size:14px;font-weight:700;color:var(--g900);">🏢 Obras cerradas</div>'
+    + '<button onclick="cerrarGestionObrasCerradas_()" style="border:none;background:none;font-size:18px;cursor:pointer;color:var(--g400);">×</button>'
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--g400);margin-bottom:12px;">Marca las obras que ya no están activas: dejan de mostrarse en la lista de la izquierda, sin perder su historial.</div>'
+    + '<div id="obrasCerradasList">'
+    + todasObras.map(function(suc){
+        var checked = cerradas.indexOf(suc) >= 0;
+        return '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;color:var(--g700);cursor:pointer;">'
+          + '<input type="checkbox" data-suc="'+suc.replace(/"/g,'&quot;')+'" '+(checked?'checked':'')+'> '+suc
+          + '</label>';
+      }).join("")
+    + '</div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">'
+    + '<button onclick="cerrarGestionObrasCerradas_()" style="padding:7px 14px;border:1px solid var(--bd);background:#fff;border-radius:6px;font-size:12px;cursor:pointer;">Cancelar</button>'
+    + '<button onclick="guardarObrasCerradas_()" style="padding:7px 14px;border:none;background:var(--brand);color:#fff;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Guardar</button>'
+    + '</div>'
+    + '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function cerrarGestionObrasCerradas_() {
+  var el = document.getElementById('obrasCerradasOverlay');
+  if (el) el.remove();
+}
+function guardarObrasCerradas_() {
+  var checked = [];
+  document.querySelectorAll('#obrasCerradasList input[type=checkbox]:checked').forEach(function(inp){
+    checked.push(inp.getAttribute('data-suc'));
+  });
+  setObrasCerradas_(checked);
+  cerrarGestionObrasCerradas_();
+  var actual = getEmp(empActual);
+  if (actual && esObraCerrada_(actual.sucursal)) {
+    var primera = EMPRESAS.find(function(e){ return !esObraCerrada_(e.sucursal); });
+    if (primera) { empActual = primera.id; vistaActual='obj'; }
+  }
+  renderSidebar();
+  renderMain();
+}
+
 function renderSidebar(){
   if(vistaGlobal === "minutas"){
     document.getElementById("sidebar").innerHTML =
@@ -794,7 +855,8 @@ function renderSidebar(){
       +'</div><div class="sb-divider"></div>' + mnSidebarHtml();
     return;
   }
-  const pcts = EMPRESAS.map(e=>pctTrazMes(e,mesActual)).filter(p=>p!==null);
+  const empresasVisibles = EMPRESAS.filter(function(e){ return !esObraCerrada_(e.sucursal); });
+  const pcts = empresasVisibles.map(e=>pctTrazMes(e,mesActual)).filter(p=>p!==null);
   const prom = pcts.length?Math.round(pcts.reduce((a,b)=>a+b)/pcts.length):null;
   const col = colorPct(prom);
 
@@ -804,9 +866,10 @@ function renderSidebar(){
     +'<div style="width:28px;height:28px;border-radius:7px;background:'+EMPRESA_COLOR+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">GE</div>'
     +'<div style="flex:1;min-width:0;">'
     +'<div style="font-size:12px;font-weight:700;color:var(--g900);">'+EMPRESA_NOMBRE+'</div>'
-    +'<div style="font-size:10px;color:var(--g400);">'+EMPRESAS.length+' obras · '+mesActual+' '+anioSeleccionado+'</div>'
+    +'<div style="font-size:10px;color:var(--g400);">'+empresasVisibles.length+' obras · '+mesActual+' '+anioSeleccionado+'</div>'
     +'</div>'
     +'<div style="font-size:13px;font-weight:800;color:'+col+';flex-shrink:0;">'+(prom===null?"—":prom+"%")+'</div>'
+    +'<span onclick="abrirGestionObrasCerradas_()" title="Gestionar obras cerradas" style="cursor:pointer;font-size:14px;color:var(--g400);flex-shrink:0;padding:2px;">⚙️</span>'
     +'</div>'
     +'<div class="prog-bg"><div class="prog-fill" style="width:'+(prom??0)+'%;background:'+col+';"></div></div>'
     +'</div>'
@@ -816,7 +879,7 @@ function renderSidebar(){
     +'<span style="font-size:9px;font-weight:700;color:#0F8A5F;text-transform:uppercase;letter-spacing:.5px;text-align:center;min-width:40px;">Valor.</span>'
     +'</div>';
 
-  html += EMPRESAS.map(emp=>{
+  html += empresasVisibles.map(emp=>{
     const act = emp.id===empActual;
     const trz = pctTrazMes(emp, mesActual);
     const tCol = trz===null ? 'var(--g300)' : (trz>=100?'var(--ok)':'var(--err)');
