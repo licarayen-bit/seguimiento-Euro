@@ -1333,6 +1333,51 @@ function procesarPayloadLive_(payload){
     ANIOS_DISPONIBLES = listarAniosDisponiblesLive_(payload);
     if (ANIOS_DISPONIBLES.indexOf(anioSeleccionado) === -1) anioSeleccionado = ANIOS_DISPONIBLES[ANIOS_DISPONIBLES.length - 1];
     actualizarSelectorAnios_();
+    // Auto-descubrir obras nuevas que existan en el Sheet real pero no en el
+    // EMPRESAS hardcodeado de este visor (a pedido del usuario, 2026-09-15,
+    // caso real: "Obispo Orrego" e "Irarrázabal 2325" no aparecían pese a
+    // tener datos reales) — antes, cualquier obra nueva quedaba invisible
+    // acá hasta que alguien reescribiera este archivo a mano, mismo problema
+    // que ya se corrigió para trazabilidad/valorización/CSE puntuales, pero
+    // a nivel de LA OBRA COMPLETA. Debe correr ANTES que cualquier bloque de
+    // abajo que haga EMPRESAS.forEach (val/m2/cse/mensual): esos solo
+    // recalculan para las obras que YA existen en el arreglo.
+    // mensual/val/fgr/cse arrancan vacíos a propósito — los bloques de más
+    // abajo los recalculan en vivo para TODAS las obras de EMPRESAS por
+    // igual, nuevas o viejas. objetivosStatic usa el mismo molde de 5
+    // objetivos que ya tienen las demás obras de Euro (Fierro/Madera/Cartón
+    // y Costo/Presupuesto se recalculan en vivo en objetivosDe() sin
+    // importar el valor horneado acá; Acompañamiento/CO2ev/Proveedores
+    // siguen siendo manuales para toda obra, nueva o vieja, hasta que se
+    // ingresen a mano — misma limitación que ya tenían las 9 originales).
+    function letraAuto_(sucursal){
+      var palabras = String(sucursal || "").split(/\s+/).filter(function(w){ return w && w.toLowerCase() !== "proyecto"; });
+      if (palabras.length === 0) return "??";
+      if (palabras.length === 1) return palabras[0].slice(0,2).toUpperCase();
+      return (palabras[0][0] + palabras[1][0]).toUpperCase();
+    }
+    var sucsConocidas = {};
+    EMPRESAS.forEach(function(emp){ sucsConocidas[emp.sucursal] = true; });
+    var sucsEnPayload = {};
+    (payload.valorizacion || []).forEach(function(r){ var s = String(r.Sucursal||"").trim(); if (s) sucsEnPayload[s] = true; });
+    (payload.trazabilidad || []).forEach(function(r){ var s = String(r.Sucursal||"").trim(); if (s) sucsEnPayload[s] = true; });
+    (payload.totalResiduos || []).forEach(function(r){ var s = String(r.Sucursal||"").trim(); if (s) sucsEnPayload[s] = true; });
+    Object.keys(sucsEnPayload).forEach(function(suc){
+      if (sucsConocidas[suc]) return;
+      EMPRESAS.push({
+        id: "euro_" + suc.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,""),
+        sucursal: suc, letra: letraAuto_(suc), m2total: null,
+        mensual: {}, val: {real:{}, acumulado:{}, meta:{}}, fgr: {},
+        cse: {correo:{}, reunion:{}, terreno:{}},
+        objetivosStatic: [
+          {texto:"Valorizar fierro, madera, cartón", meta:100, avance:null, detalle:"Sin dato registrado"},
+          {texto:"Acompañamiento en terreno, mediante charlas y una auditoría", meta:100, avance:null, detalle:"Sin dato registrado"},
+          {texto:"Ton CO2 evitadas/M2", meta:100, avance:null, detalle:"Sin dato registrado"},
+          {texto:"Contactar Nuevos proveedores", meta:100, avance:null, detalle:"Sin dato registrado"},
+          {texto:"Costo/Presupuesto", meta:null, avance:null, detalle:"Sin dato registrado"}
+        ]
+      });
+    });
     const m3PorObraMes = {}, co2PorObraMes = {}, avancePorObraMes = {};
     // Años anteriores a anioSeleccionado se acumulan aparte, por obra, sin
     // desglose por mes: FGR/CO2ev·m² son un acumulado desde el inicio real
