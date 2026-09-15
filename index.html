@@ -2092,7 +2092,9 @@ function kpiRenderOverlay(){
     // check/X, "Valorizar fierro, madera, cartón" como x/3 — en vez de %.
     const objAcomp = objsAll.find(function(o){ return /acompañamiento/i.test(o.texto); });
     const objFmc = objsAll.find(function(o){ return /fierro.*madera.*cart[oó]n/i.test(o.texto); });
-    return { emp: emp, pTrazoAnu: pTrazoAnu, pValAnu: pValAnu, avance: avance, fgr: fgr, objOk: objOk, objTot: objs.length, objAcomp: objAcomp, objFmc: objFmc };
+    const objCostoRes = objsAll.find(function(o){ return o.texto === "Costo/Presupuesto Residuos"; });
+    const objCostoExc = objsAll.find(function(o){ return o.texto === "Costo/Presupuesto Excavación"; });
+    return { emp: emp, pTrazoAnu: pTrazoAnu, pValAnu: pValAnu, avance: avance, fgr: fgr, objOk: objOk, objTot: objs.length, objAcomp: objAcomp, objFmc: objFmc, objCostoRes: objCostoRes, objCostoExc: objCostoExc };
   });
   function kpiAcompCell(o){
     if (!o || o.avance===null || o.avance===undefined) return '<span style="color:var(--g300);">—</span>';
@@ -2103,12 +2105,21 @@ function kpiRenderOverlay(){
     const x = Math.round(o.avance/100*3);
     return '<span style="color:'+(x>=3?'var(--ok)':x>0?'var(--warn)':'var(--err)')+';font-weight:700;">'+x+'/3</span>';
   }
+  // Costo/Presupuesto: invertido (menos gastado es mejor, al revés que el
+  // resto de los % de este visor) — mismo umbral que renderObjetivos()
+  // (verde ≤80%, amarillo 80-100%, rojo sobre 100%).
+  function kpiCostoCell(o){
+    if (!o || o.avance===null || o.avance===undefined) return '<span style="color:var(--g300);">—</span>';
+    const col = o.avance<=80?'var(--ok)':(o.avance<=100?'var(--warn)':'var(--err)');
+    return '<span style="color:'+col+';font-weight:700;">'+o.avance+'%</span>';
+  }
   body.innerHTML = '<table class="kpi-cmp-table">'
     +'<thead><tr>'
     +'<th>Obra</th><th>m² totales</th><th>% Avance</th>'
     +'<th>Traz. anual</th>'
     +'<th>%valorización anual</th>'
     +'<th>Acompañamiento</th><th>Fierro/Madera/Cartón</th>'
+    +'<th>Costo/Presup. Residuos</th><th>Costo/Presup. Excavación</th>'
     +'<th>FGR acum. (m³/m²)</th><th>CO2ev/m² acum.</th>'
     +'<th>Objetivos</th>'
     +'</tr></thead><tbody>'
@@ -2123,6 +2134,8 @@ function kpiRenderOverlay(){
         +'<td>'+kpiPctTxt(f.pValAnu)+'</td>'
         +'<td>'+kpiAcompCell(f.objAcomp)+'</td>'
         +'<td>'+kpiFmcCell(f.objFmc)+'</td>'
+        +'<td>'+kpiCostoCell(f.objCostoRes)+'</td>'
+        +'<td>'+kpiCostoCell(f.objCostoExc)+'</td>'
         +'<td>'+(f.fgr.fgr===null||f.fgr.fgr===undefined?'<span style="color:var(--g300);">—</span>':f.fgr.fgr)+'</td>'
         +'<td>'+(f.fgr.co2===null||f.fgr.co2===undefined?'<span style="color:var(--g300);">—</span>':f.fgr.co2.toLocaleString("es-CL",{maximumFractionDigits:7}))+'</td>'
         +'<td style="font-weight:700;color:'+objCol+';">'+f.objOk+'/'+f.objTot+'</td>'
