@@ -788,6 +788,29 @@ function objetivosDe(emp, hastaMes){
   // fgrLive.residuosValorizadosPorObra en fgrFetchLive/procesarPayloadLive_.
   const RESIDUOS_VALORIZAR_ESPECIFICOS = ["Fierro","Madera","Cartón"];
   emp.objetivosStatic.forEach(o=>{
+    // Costo/Presupuesto EN VIVO desde "💰 Costo Presupuesto" (a pedido del
+    // usuario, 2026-09-15) — reemplaza la única fila horneada ("Sin dato
+    // registrado") por 2 filas en vivo, una por categoría. "invertido:true"
+    // porque acá MENOS gastado es mejor, al revés que el resto de los
+    // objetivos en % de esta app (ver ok/color abajo en renderObjetivos()).
+    if (o.texto === "Costo/Presupuesto" && fgrLive && fgrLive.costoPresupuestoPorObra){
+      const cp = fgrLive.costoPresupuestoPorObra[emp.sucursal] || {
+        residuos: {costo:0, ingreso:0, presupuesto:null},
+        excavacion: {costo:0, ingreso:0, presupuesto:null}
+      };
+      ["residuos","excavacion"].forEach(function(cat){
+        const d = cp[cat];
+        const texto = "Costo/Presupuesto " + (cat==="excavacion" ? "Excavación" : "Residuos");
+        if (d.presupuesto === null) {
+          list.push({texto:texto, meta:null, avance:null, detalle:"Sin presupuesto cargado", sinDato:true});
+          return;
+        }
+        const pct = d.presupuesto > 0 ? Math.round(d.costo/d.presupuesto*1000)/10 : 0;
+        const detalle = "Gastado: $"+Math.round(d.costo).toLocaleString("es-CL")+" de $"+Math.round(d.presupuesto).toLocaleString("es-CL");
+        list.push({texto:texto, meta:100, avance:pct, ok: pct<=80, detalle:detalle, sinDato:false, invertido:true});
+      });
+      return;
+    }
     if (o.texto === "Valorizar fierro, madera, cartón" && fgrLive && fgrLive.residuosValorizadosPorObra){
       const tenidosSet = fgrLive.residuosValorizadosPorObra[emp.sucursal] || new Set();
       const tenidos = RESIDUOS_VALORIZAR_ESPECIFICOS.filter(function(r){
@@ -914,8 +937,16 @@ function renderObjetivos(emp){
       // (kpiAcompCell/kpiFmcCell) sigue con su propio estilo check/x / x-3,
       // sin cambios — eso se pidió explícitamente aparte.
       const sinDato = o.avance===null || o.avance===undefined;
-      const col = sinDato ? 'var(--g300)' : (o.ok?'#039855':(o.meta&&o.avance>=o.meta*0.7?'#F79009':'#F04438'));
-      const pctBarra = sinDato ? 0 : (o.meta?Math.min(Math.round(o.avance/o.meta*100),100):Math.min(Math.round(o.avance),100));
+      // invertido (ej. Costo/Presupuesto): MENOS avance es mejor, al revés
+      // que el resto de los objetivos en % — o.ok ya viene calculado con el
+      // umbral correcto (<=80%), acá solo falta distinguir amarillo/rojo
+      // para cuando no está ok.
+      const col = sinDato ? 'var(--g300)' : (o.invertido
+        ? (o.ok?'#039855':(o.avance<=100?'#F79009':'#F04438'))
+        : (o.ok?'#039855':(o.meta&&o.avance>=o.meta*0.7?'#F79009':'#F04438')));
+      const pctBarra = sinDato ? 0 : (o.invertido
+        ? Math.min(Math.round(o.avance),100)
+        : (o.meta?Math.min(Math.round(o.avance/o.meta*100),100):Math.min(Math.round(o.avance),100)));
       return '<div class="obj-item">'
         +'<div class="obj-text">'+o.texto+'</div>'
         +'<div class="obj-prog">'
@@ -1452,10 +1483,35 @@ function procesarPayloadLive_(payload){
       residuosValorizadosPorObra[suc] = residuosValorizadosPorObra[suc] || new Set();
       residuosValorizadosPorObra[suc].add(normResiduoTxt_(r.Residuo));
     });
+    // Costo/Presupuesto EN VIVO desde "💰 Costo Presupuesto" (a pedido del
+    // usuario, 2026-09-15) — reemplaza el objetivo "Costo/Presupuesto"
+    // horneado a mano (emp.objetivosStatic, siempre "Sin dato registrado"),
+    // igual patrón que residuosValorizadosPorObra arriba. Se separa en 2
+    // categorías (Residuos/Excavación, ver esExcavacion_ arriba) y, al igual
+    // que en valorizacion-recylink.html (costoPresupuestoAgregadoDeSuc_), NO
+    // se filtra por año: el presupuesto es de todo el proyecto.
+    const costoPresupuestoPorObra = {};
+    (payload.costoPresupuesto || []).forEach(function(r){
+      const suc = String(r.Sucursal || "").trim();
+      if (!suc) return;
+      if (!costoPresupuestoPorObra[suc]) costoPresupuestoPorObra[suc] = {
+        residuos: {costo:0, ingreso:0, presupuesto:null},
+        excavacion: {costo:0, ingreso:0, presupuesto:null}
+      };
+      const cat = esExcavacion_(r.Residuo) ? "excavacion" : "residuos";
+      const mes = String(r.Mes || "").trim();
+      if (mes === "Presupuesto") {
+        costoPresupuestoPorObra[suc][cat].presupuesto = parseFloat(r.Costo) || 0;
+        return;
+      }
+      costoPresupuestoPorObra[suc][cat].costo += parseFloat(r.Costo) || 0;
+      costoPresupuestoPorObra[suc][cat].ingreso += parseFloat(r.Ingreso) || 0;
+    });
     fgrLive = {
       m3PorObraMes: m3PorObraMes, co2PorObraMes: co2PorObraMes, avancePorObraMes: avancePorObraMes,
       m3AnioAnteriorPorObra: m3AnioAnteriorPorObra, co2AnioAnteriorPorObra: co2AnioAnteriorPorObra,
-      registrosPorObra: registrosPorObra, residuosValorizadosPorObra: residuosValorizadosPorObra
+      registrosPorObra: registrosPorObra, residuosValorizadosPorObra: residuosValorizadosPorObra,
+      costoPresupuestoPorObra: costoPresupuestoPorObra
     };
 
     // m² totales por obra: viven en la fila "m2 totales" de "% de avance"
