@@ -2176,6 +2176,109 @@ function renderFGR(emp){
   return html;
 }
 
+// Evolución mensual de Costo/Presupuesto por residuo (a pedido del
+// usuario, 2026-09-15) — lee directo fgrLivePayloadCache.costoPresupuesto
+// (mismo payload que ya alimenta fgrLive.costoPresupuestoPorObra en
+// procesarPayloadLive_, pero SIN colapsar por categoría: acá se necesita
+// el desglose Mes×Residuo completo). No se filtra por año (igual que el
+// resto de este objetivo — el presupuesto es de todo el proyecto).
+function renderCostoPresupuesto(emp){
+  const todasLasFilas = (fgrLivePayloadCache && fgrLivePayloadCache.costoPresupuesto) || [];
+  const rows = todasLasFilas.filter(function(r){ return String(r.Sucursal||"").trim() === emp.sucursal; });
+  function esExcavacionTxt_(residuo){
+    return String(residuo || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "") === "excavacion";
+  }
+  function fmtMoney_(n){ return "$"+Math.round(n).toLocaleString("es-CL"); }
+  function colInv_(pct){ return pct===null ? "var(--g400)" : (pct<=80?"#039855":(pct<=100?"#F79009":"#F04438")); }
+
+  const detalle = rows.filter(function(r){ return String(r.Mes||"").trim() !== "Presupuesto"; });
+  const presRows = rows.filter(function(r){ return String(r.Mes||"").trim() === "Presupuesto"; });
+  const presResiduosRow = presRows.find(function(r){ return !esExcavacionTxt_(r.Residuo); });
+  const presExcavacionRow = presRows.find(function(r){ return esExcavacionTxt_(r.Residuo); });
+  const presupuestoResiduos = presResiduosRow ? (parseFloat(presResiduosRow.Costo)||0) : null;
+  const presupuestoExcavacion = presExcavacionRow ? (parseFloat(presExcavacionRow.Costo)||0) : null;
+
+  const costoPorResiduo = {};
+  detalle.forEach(function(r){
+    const res = String(r.Residuo||"").trim() || "Sin especificar";
+    costoPorResiduo[res] = (costoPorResiduo[res]||0) + (parseFloat(r.Costo)||0);
+  });
+  const residuosOrdenados = Object.keys(costoPorResiduo).sort(function(a,b){ return costoPorResiduo[b]-costoPorResiduo[a]; });
+  const costoTotalResiduos = residuosOrdenados.filter(function(r){ return !esExcavacionTxt_(r); }).reduce(function(s,r){ return s+costoPorResiduo[r]; },0);
+  const costoTotalExcavacion = residuosOrdenados.filter(esExcavacionTxt_).reduce(function(s,r){ return s+costoPorResiduo[r]; },0);
+  const pctResiduos = presupuestoResiduos>0 ? Math.round(costoTotalResiduos/presupuestoResiduos*1000)/10 : null;
+  const pctExcavacion = presupuestoExcavacion>0 ? Math.round(costoTotalExcavacion/presupuestoExcavacion*1000)/10 : null;
+
+  const kpis = '<div class="kpi-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px;">'
+    +'<div class="kpi"><div class="kpi-lbl">Costo/Presupuesto Residuos</div><div class="kpi-val" style="color:'+colInv_(pctResiduos)+'">'+(pctResiduos===null?"—":pctResiduos+"%")+'</div><div class="kpi-desc">'+fmtMoney_(costoTotalResiduos)+(presupuestoResiduos!==null?" de "+fmtMoney_(presupuestoResiduos):" · sin presupuesto cargado")+'</div></div>'
+    +'<div class="kpi"><div class="kpi-lbl">Costo/Presupuesto Excavación</div><div class="kpi-val" style="color:'+colInv_(pctExcavacion)+'">'+(pctExcavacion===null?"—":pctExcavacion+"%")+'</div><div class="kpi-desc">'+fmtMoney_(costoTotalExcavacion)+(presupuestoExcavacion!==null?" de "+fmtMoney_(presupuestoExcavacion):" · sin presupuesto cargado")+'</div></div>'
+    +'</div>';
+
+  if (detalle.length === 0) {
+    return kpis + '<div class="card"><div class="card-header"><div class="card-title">Evolución mensual por residuo</div></div><div class="empty">Sin datos de costo registrados para '+emp.sucursal+'.</div></div>';
+  }
+
+  const mesesMap = {};
+  detalle.forEach(function(r){
+    const anio = String(r["Año"]||"").trim();
+    const mes = String(r.Mes||"").trim();
+    const idx = MESES.indexOf(mes);
+    if (!anio || idx===-1) return;
+    const key = anio+"-"+String(idx+1).padStart(2,"0");
+    mesesMap[key] = {anio:anio, mes:mes, orden:parseInt(anio,10)*100+(idx+1)};
+  });
+  const mesesOrdenados = Object.values(mesesMap).sort(function(a,b){ return a.orden-b.orden; });
+
+  const matriz = {};
+  detalle.forEach(function(r){
+    const anio = String(r["Año"]||"").trim();
+    const mes = String(r.Mes||"").trim();
+    const idx = MESES.indexOf(mes);
+    if (!anio || idx===-1) return;
+    const key = anio+"-"+String(idx+1).padStart(2,"0");
+    const res = String(r.Residuo||"").trim() || "Sin especificar";
+    matriz[key] = matriz[key] || {};
+    matriz[key][res] = (matriz[key][res]||0) + (parseFloat(r.Costo)||0);
+  });
+
+  const tabla = '<div class="card"><div class="card-header"><div>'
+    +'<div class="card-title">Evolución mensual por residuo · '+emp.sucursal+'</div>'
+    +'<div class="card-sub">Costo por residuo, mes a mes (todos los años con datos)</div>'
+    +'</div></div>'
+    +'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">'
+    +'<thead><tr style="background:var(--g50);">'
+    +'<th style="padding:8px 12px;font-size:10px;font-weight:700;color:var(--tx2);text-align:left;border-bottom:1px solid var(--bd);position:sticky;left:0;background:var(--g50);white-space:nowrap;">MES</th>'
+    +residuosOrdenados.map(function(res){
+      return '<th style="padding:8px 12px;font-size:10px;font-weight:700;color:'+(esExcavacionTxt_(res)?"#B54708":"var(--tx2)")+';text-align:right;border-bottom:1px solid var(--bd);white-space:nowrap;">'+res+'</th>';
+    }).join("")
+    +'<th style="padding:8px 12px;font-size:10px;font-weight:700;color:var(--brand);text-align:right;border-bottom:1px solid var(--bd);white-space:nowrap;">TOTAL MES</th>'
+    +'</tr></thead><tbody>'
+    +mesesOrdenados.map(function(mo, i){
+      const key = mo.anio+"-"+String(MESES.indexOf(mo.mes)+1).padStart(2,"0");
+      const fila = matriz[key] || {};
+      const totalMes = residuosOrdenados.reduce(function(s,res){ return s+(fila[res]||0); },0);
+      const bg = i%2 ? "background:var(--g25);" : "background:#fff;";
+      return "<tr>"
+        +"<td style='padding:8px 12px;font-size:12px;font-weight:700;color:var(--g700);white-space:nowrap;position:sticky;left:0;"+bg+"'>"+mo.mes+" "+mo.anio+"</td>"
+        +residuosOrdenados.map(function(res){
+          const v = fila[res];
+          return "<td style='padding:8px 12px;text-align:right;font-size:12px;color:"+(v?"var(--g700)":"var(--g300)")+";"+bg+"'>"+(v?fmtMoney_(v):"—")+"</td>";
+        }).join("")
+        +"<td style='padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:var(--brand);"+bg+"'>"+fmtMoney_(totalMes)+"</td>"
+        +"</tr>";
+    }).join("")
+    +'<tr style="border-top:2px solid var(--bd);background:var(--g50);">'
+    +'<td style="padding:8px 12px;font-size:12px;font-weight:700;color:var(--g700);position:sticky;left:0;background:var(--g50);white-space:nowrap;">TOTAL</td>'
+    +residuosOrdenados.map(function(res){
+      return '<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:var(--g700);">'+fmtMoney_(costoPorResiduo[res])+'</td>';
+    }).join("")
+    +'<td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:700;color:var(--brand);">'+fmtMoney_(costoTotalResiduos+costoTotalExcavacion)+'</td>'
+    +'</tr>'
+    +'</tbody></table></div></div>';
+
+  return kpis + tabla;
+}
+
 function setMes(m){ mesActual=m; renderSidebar(); renderMain(); if (kpiOpen) kpiRenderOverlay(); }
 function setEmp(id){ empActual=id; vistaActual='obj'; vistaGlobal='empresa'; renderSidebar(); renderMain(); mnUpdateAccessBtn(); fgrUpdateAccessBtn(); }
 function setVista(v){ vistaActual=v; renderMain(); }
@@ -2200,6 +2303,7 @@ function renderMain(){
     +'<button class="vtab '+(vistaActual==='anual'?'active':'')+'" onclick="setVista(\'anual\')">📅 Vista anual</button>'
     +'<button class="vtab '+(vistaActual==='val'?'active':'')+'" onclick="setVista(\'val\')">♻️ Valorización</button>'
     +'<button class="vtab '+(vistaActual==='fgr'?'active':'')+'" onclick="setVista(\'fgr\')">🌱 FGR / CO2 ev·m²</button>'
+    +'<button class="vtab '+(vistaActual==='costo'?'active':'')+'" onclick="setVista(\'costo\')">💰 Costo/Presupuesto</button>'
     +'</div>';
 
   if(vistaActual==='obj') html += renderObjetivos(emp);
@@ -2207,6 +2311,7 @@ function renderMain(){
   else if(vistaActual==='anual') html += renderAnual(emp);
   else if(vistaActual==='val') html += renderValorizacion(emp);
   else if(vistaActual==='fgr') html += renderFGR(emp);
+  else if(vistaActual==='costo') html += renderCostoPresupuesto(emp);
 
   document.getElementById("main").innerHTML = html;
 }
