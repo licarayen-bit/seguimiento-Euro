@@ -1313,16 +1313,35 @@ function listarAniosDisponiblesLive_(payload){
   return lista.length ? lista : [String(new Date().getFullYear())];
 }
 
-async function fgrFetchLive(){
+// FIX (2026-09-23, a pedido del usuario: "no se actualizan los datos"):
+// esta es la carga PRINCIPAL de toda la app (se llama una sola vez al
+// abrir la página, ver el final del archivo), pero el Apps Script de Euro
+// lee 9 hojas distintas en cada request y a veces demora tanto que Google
+// corta la respuesta con un error — confirmado con pruebas reales: unas
+// veces responde en ~12s, otras veces supera el límite y devuelve un error
+// HTML en vez de JSON. Antes, cualquier falla (timeout, error, JSON
+// inválido) quedaba en un console.warn silencioso — el usuario solo veía
+// "no carga nada" sin ninguna pista ni forma de recuperarse sin recargar
+// manualmente. Ahora reintenta automáticamente 2 veces (con una pausa) y,
+// si sigue fallando, muestra un aviso visible en vez de fallar en silencio.
+async function fgrFetchLive(intento){
   if (fgrLiveLoading) return;
   fgrLiveLoading = true;
   try {
     const res = await fetch(DATA_SOURCE_URL + "?_=" + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const payload = await res.json();
     fgrLivePayloadCache = payload;
     procesarPayloadLive_(payload);
   } catch(err){
     console.warn("No se pudo cargar % Avance / Total Residuos en vivo para FGR:", err);
+    const siguienteIntento = (intento || 0) + 1;
+    if (siguienteIntento <= 2) {
+      fgrLiveLoading = false;
+      setTimeout(function(){ fgrFetchLive(siguienteIntento); }, 4000);
+      return;
+    }
+    mnShowToast("No se pudieron cargar los datos desde Google Sheets (el servidor está lento o no respondió). Recarga la página para reintentar.", true);
   } finally {
     fgrLiveLoading = false;
     if (vistaActual === "fgr" || vistaActual === "obj") renderMain();
