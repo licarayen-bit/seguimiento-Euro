@@ -1332,17 +1332,18 @@ function listarAniosDisponiblesLive_(payload){
   return lista.length ? lista : [String(new Date().getFullYear())];
 }
 
-// FIX (2026-09-23, a pedido del usuario: "no se actualizan los datos"):
-// esta es la carga PRINCIPAL de toda la app (se llama una sola vez al
-// abrir la página, ver el final del archivo), pero el Apps Script de Euro
-// lee 9 hojas distintas en cada request y a veces demora tanto que Google
-// corta la respuesta con un error — confirmado con pruebas reales: unas
-// veces responde en ~12s, otras veces supera el límite y devuelve un error
-// HTML en vez de JSON. Antes, cualquier falla (timeout, error, JSON
-// inválido) quedaba en un console.warn silencioso — el usuario solo veía
-// "no carga nada" sin ninguna pista ni forma de recuperarse sin recargar
-// manualmente. Ahora reintenta automáticamente 2 veces (con una pausa) y,
-// si sigue fallando, muestra un aviso visible en vez de fallar en silencio.
+// FIX (2026-09-23, a pedido del usuario: "no se actualizan los datos" /
+// "se volvió a caer la página"): esta es la carga PRINCIPAL de toda la app
+// (se llama una sola vez al abrir la página, ver el final del archivo).
+// Confirmado con pruebas reales que el Apps Script de Euro tiene un patrón
+// clásico de "cold start": la primera carga después de un rato sin uso
+// puede tardar 40-45s+ (a veces Google la corta con un error HTML antes de
+// que termine), pero una vez que el script queda "caliente", las cargas
+// siguientes responden en ~5-6s. Antes solo reintentaba 2 veces con 4s de
+// pausa — insuficiente para asegurar que alguno de los reintentos caiga en
+// una ejecución ya "caliente". Ahora reintenta hasta 4 veces con pausas
+// más cortas, y si sigue fallando muestra un aviso visible en vez de
+// fallar en silencio.
 async function fgrFetchLive(intento){
   if (fgrLiveLoading) return;
   fgrLiveLoading = true;
@@ -1355,9 +1356,13 @@ async function fgrFetchLive(intento){
   } catch(err){
     console.warn("No se pudo cargar % Avance / Total Residuos en vivo para FGR:", err);
     const siguienteIntento = (intento || 0) + 1;
-    if (siguienteIntento <= 2) {
+    if (siguienteIntento <= 4) {
       fgrLiveLoading = false;
-      setTimeout(function(){ fgrFetchLive(siguienteIntento); }, 4000);
+      const mainEl = document.getElementById("main");
+      if (mainEl && !fgrLivePayloadCache) {
+        mainEl.innerHTML = '<div style="padding:32px;text-align:center;font-size:13px;color:var(--tx2,#667085);">Google Sheets está lento, reintentando… (intento '+siguienteIntento+' de 4)</div>';
+      }
+      setTimeout(function(){ fgrFetchLive(siguienteIntento); }, 2000);
       return;
     }
     mnShowToast("No se pudieron cargar los datos desde Google Sheets (el servidor está lento o no respondió). Recarga la página para reintentar.", true);
@@ -3037,7 +3042,7 @@ function mnOnAddRow(){
 // forma de distinguir "está cargando" de "algo falló". Se muestra un
 // aviso explícito desde el primer instante.
 document.getElementById("sidebar").innerHTML = '<div style="padding:16px;font-size:12px;color:var(--tx2,#667085);">Cargando datos desde Google Sheets…</div>';
-document.getElementById("main").innerHTML = '<div style="padding:32px;text-align:center;font-size:13px;color:var(--tx2,#667085);">Cargando datos desde Google Sheets… puede tardar unos 20 segundos.</div>';
+document.getElementById("main").innerHTML = '<div style="padding:32px;text-align:center;font-size:13px;color:var(--tx2,#667085);">Cargando datos desde Google Sheets… la primera carga puede tardar hasta 45 segundos.</div>';
 
 mnLoadConfig();
 mnLoadCachedData();
